@@ -1,0 +1,9 @@
+#!/bin/bash
+
+# clone / download the code files here, and install any dependencies
+hred="https://github.com/julianser/hed-dlg-truncated.git"
+
+echo "-------Cloning models-----------"
+git clone "$hred" hred/
+
+echo "-------Models downloaded-----------"
