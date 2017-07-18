@@ -1,89 +1,144 @@
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+"""
+Copyright 2017 Neural Networks and Deep Learning lab, MIPT
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+"""
+
+import requests
+import os
+import json
+import time
+import random
 import collections
+import model_selection
 import config
 conf = config.get_config()
-from models.wrapper import HRED_Wrapper
+import logging
+logging.basicConfig(level=logging.INFO,
+        format='%(asctime)s %(name)s.%(funcName)s +%(lineno)s: %(levelname)-8s [%(process)d] %(message)s',
+        )
 
 MAX_CONTEXT = 3
 
-def help_cmd(bot, update):
-    _check_user(update.message.chat_id)
-    text = '%s\n%s\n%s %s\n%s' % ('Hello, I am the HRED Bot.',
-        'I am trained on data from Twitter and Reddit Politics.',
-        'By default, I will talk to you using my Twitter model.',
-        'If you would like to switch models, use the /starttwitter or /startreddit commands.',
-        'I base my responses on the history of our conversation. If you want to start anew use the /resetcontext command.')
-    bot.send_message(chat_id=update.message.chat_id, text=text)
+mSelect = model_selection.ModelSelection()
 
-def start_twitter(bot, update):
-    _check_user(update.message.chat_id)
-    _reset_user(update.message.chat_id)
-    ai.history[update.message.chat_id]['model'] = 'twitter'
-    text = 'I am now using my Twitter model to chat with you.'
-    bot.send_message(chat_id=update.message.chat_id, text=text)
-
-def start_reddit(bot, update):
-    _check_user(update.message.chat_id)
-    _reset_user(update.message.chat_id)
-    ai.history[update.message.chat_id]['model'] = 'reddit'
-    text = 'I am now using my Reddit model to chat with you.'
-    bot.send_message(chat_id=update.message.chat_id, text=text)
-
-def reset_context(bot, update):
-    _check_user(update.message.chat_id)
-    _reset_user(update.message.chat_id)
-    bot.send_message(chat_id=update.message.chat_id, text='Okay, let\'s start over.')
-
-def get_response(bot, update):
-    _check_user(update.message.chat_id)
-    model_type = ai.history[update.message.chat_id]['model']
-    if model_type in ai.models:
-        text, context = ai.models[model_type].get_response(update.message.chat_id, update.message.text, ai.history[update.message.chat_id]['context'])
-        ai.history[update.message.chat_id]['context'] = context
-    else:
-        text = 'This model is not implemented yet.'
-    bot.send_message(chat_id=update.message.chat_id, text=text)
-
-class Bot(object):
+class ConvAIRLLBot:
 
     def __init__(self):
-        # For each user, we should keep track of their history as well as which bot they are talking to.
-        self.history = {}
-        self.updater = Updater(conf.bot_token)
-        self.dp = self.updater.dispatcher
+        self.chat_id = None
+        self.observation = None
+        self.context = {} # keep contexts here
 
-        self._add_cmd_handler('start', help_cmd)
-        self._add_cmd_handler('help', help_cmd)
-        self._add_cmd_handler('starttwitter', start_twitter)
-        self._add_cmd_handler('startreddit', start_reddit)
-        self._add_cmd_handler('resetcontext', reset_context)
+    def observe(self, m):
+        if self.chat_id is None and m['message']['text'].startswith('/start '):
+            self.chat_id = m['message']['chat']['id']
+            self.context[self.chat_id] = collections.deque(maxlen=MAX_CONTEXT)
+            logging.info("Start new chat #%s" % self.chat_id)
+        elif self.chat_id is not None and m['message']['text'] == '/end':
+            logging.info("End chat #%s" % self.chat_id)
+            self.context[self.chat_id] = collections.deque(maxlen=MAX_CONTEXT)
+            self.chat_id = None
+            self.observation = None
+            return
 
-        msg_handler = MessageHandler(Filters.text, get_response)
-        self.dp.add_handler(msg_handler)
+        if self.chat_id is None:
+            logging.info("Dialog not started yet. Ignore message.")
+        elif m['message']['chat']['id'] == self.chat_id:
+            logging.info("Accept message as part of chat #%s" % self.chat_id)
+            self.observation = m['message']['text']
+            return self.observation
+        else:
+            logging.info("Multiple dialogues are not allowed. Ignore message.")
 
-        self.models = {}
+    def act(self):
+        if self.chat_id is None:
+            logging.info("Dialog not started yet. Do not act.")
+            return
 
-    def _add_cmd_handler(self, name, fn):
-        handler = CommandHandler(name, fn)
-        self.dp.add_handler(handler)
+        message = {
+            'chat_id': self.chat_id
+        }
 
-    def power_on(self):
-        print 'Bot listening...'
-        self.updater.start_polling()
-        self.updater.idle()
+        # select from our models here
+        text,context = mSelect.get_response(self.chat_id,self.observation,self.context[self.chat_id])
+        self.context[self.chat_id] = context
+        #texts = ['I love you!', 'Wow!', 'Really?', 'Nice!', 'Hi', 'Hello', '', '/end']
+        #text = texts[random.randint(0, 7)]
+
+        data = {}
+        if text == '':
+            logging.info("Decided to do not respond and wait for new message")
+            return
+        elif text == '/end':
+            logging.info("Decided to finish chat %s" % self.chat_id)
+            self.chat_id = None
+            data['text'] = '/end'
+            data['evaluation'] = {
+                'quality': 0,
+                'breadth': 0,
+                'engagement': 0
+            }
+        else:
+            logging.info("Decided to respond with text: %s" % text)
+            data = {
+                'text': text,
+                'evaluation': 0
+            }
+
+        message['text'] = json.dumps(data)
+        return message
 
 
-def _reset_user(user_id):
-    ai.history[user_id]['context'] = collections.deque(maxlen=MAX_CONTEXT)
+def main():
 
-def _check_user(user_id):
-    # Check if we have the user in our memory, if not... start talking with Twitter bot.
-    if user_id not in ai.history:
-        ai.history[user_id] = {'model':'twitter',
-                                'context': collections.deque(maxlen=MAX_CONTEXT)}
+    """
+    !!!!!!! Put your bot id here !!!!!!!
+    """
+    BOT_ID = conf.test_bot_token
+
+    if BOT_ID is None:
+        raise Exception('You should enter your bot token/id!')
+
+    BOT_URL = os.path.join('https://convaibot.herokuapp.com/', BOT_ID)
+
+    bot = ConvAIRLLBot()
+    print "loading models"
+    mSelect.initialize_models()
+
+    while True:
+        logging.info("Get updates from server")
+        res = requests.get(os.path.join(BOT_URL, 'getUpdates'))
+
+        if res.status_code != 200:
+            logging.info(res.text)
+            res.raise_for_status()
+
+        logging.info("Got %s new messages" % len(res.json()))
+        for m in res.json():
+            logging.info("Process message %s" % m)
+            bot.observe(m)
+            new_message = bot.act()
+            if new_message is not None:
+                logging.info("Send response to server.")
+                res = requests.post(os.path.join(BOT_URL, 'sendMessage'),
+                                    json=new_message,
+                                    headers={'Content-Type': 'application/json'})
+                if res.status_code != 200:
+                    logging.info(res.text)
+                    res.raise_for_status()
+        logging.info("Sleep for 1 sec. before new try")
+        time.sleep(1)
+
 
 if __name__ == '__main__':
-    ai = Bot()
-    ai.models['twitter'] = HRED_Wrapper(conf.hred['twitter_model_prefix'], conf.hred['twitter_dict_file'], 'twitter',ai)
-    ai.models['reddit'] = HRED_Wrapper(conf.hred['reddit_model_prefix'], conf.hred['reddit_dict_file'], 'reddit',ai)
-    ai.power_on()
+    main()

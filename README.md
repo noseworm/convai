@@ -11,6 +11,7 @@ This repository contains the Dockerfile and setup code to run chat bot in docker
 - **models/wrappper.py** - Wrapper function which calls the models. Must implement `get_response` def.
 - **models/setup** - shell script to download the models
 - **data/setup** - shell script to download the data files and saved model files
+- **model_selection.py** - Selection logic for best answer
 
 ## Running Docker
 
@@ -24,8 +25,7 @@ This repository contains the Dockerfile and setup code to run chat bot in docker
 - In **data/setup**, add the data location to download your saved model data
 - Change the **config.py** with the endpoint of the data
 - Create a wrapper in **models/wrapper.py** for your model
-- Modify the **bot.py** to call your model.
-- **TODO**: chat selection logic is currently sitting in bot.py. Should it be in a separate program?
+- Modify the **model_selection.py** to call your model.
 
 ## Bugs
 
