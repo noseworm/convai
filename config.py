@@ -7,9 +7,9 @@ class dotdict(dict):
         __delattr__ = dict.__delitem__
 
 config_data = {
-        'bot_token':'355748420:AAEpaGukZEeC1jFwvVU2TVf3d92fgq6VrKU',
-        'test_bot_token':'5319E57A-F165-4BEC-94E6-413C38B4ACF9',
-        'bot_endpoint':'',
+        'test_bot_token':'355748420:AAEpaGukZEeC1jFwvVU2TVf3d92fgq6VrKU',
+        'bot_token':'5319E57A-F165-4BEC-94E6-413C38B4ACF9',
+        'bot_endpoint':'https://convaibot.herokuapp.com/',
         # data endpoints
         # add your model endpoints here
         'data_base':'/root/convai/',
