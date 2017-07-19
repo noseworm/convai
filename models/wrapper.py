@@ -68,10 +68,6 @@ class HRED_Wrapper(Model_Wrapper):
         if name == 'hred-reddit':
             self.speaker_token = ['<speaker_1>', '<speaker_2']
 
-        self.remove_tokens = ['<first_speaker>', '<at>', '<second_speaker>']
-        for i in range(0, 10):
-            self.remove_tokens.append('<speaker_%d>' % i)
-
     def _preprocess(self, text, context_length):
         text = text.replace("'", " '")  # TODO: apply same tokenization script as in data creating
         text = '%s %s </s>' % (self.speaker_token[context_length%2], text.strip().lower())
@@ -79,10 +75,8 @@ class HRED_Wrapper(Model_Wrapper):
 
     def _format_output(self, text):
         text = text.replace(" '", "'")
-        for token in self.remove_tokens:
-            text = text.replace(token, '')
-        text = re.sub('<[^>]+>', '', text) # remove the speaker information if present
-        return text
+        text = re.sub('<[^>]+>', '', text) # remove all <tags>
+        return ' '.join(text.strip().split())  # strip, split, join to remove extra spaces
 
     # must contain this method for the bot
     def get_response(self, user_id, text, context):
@@ -146,7 +140,7 @@ class Dual_Encoder_Wrapper(Model_Wrapper):
         with open("%s_r-encs.pkl") as handle:
             self.cached_retrieved_data = cPickle.load(handle)
 
-        self.special_tokens = ['<first_speaker>', '<second_speaker>', '<url>']
+        self.speaker_tokens = ['<first_speaker>', '<second_speaker>']
 
     def _create_model(self, data, w, word2idx, idx2word, args):
         return DE_Model(
@@ -185,14 +179,13 @@ class Dual_Encoder_Wrapper(Model_Wrapper):
 
     def _preprocess(self, text, context_length):
         text = text.replace("'", " '")  # TODO: apply same tokenization script as in data creating
-        text = '%s %s </s>' % (self.special_tokens[context_length % 2], text.strip().lower())
+        text = '%s %s </s>' % (self.speaker_tokens[context_length % 2], text.strip().lower())
         return text
 
     def _format_output(self, text):
         text = text.replace(" '", "'")  # TODO: come up with a smarter reverse tokenization system?
-        for token in self.special_tokens:
-            text = text.replace(token, '')
-        return text
+        text = re.sub('<[^>]+>', '', text) # remove all <tags>
+        return ' '.join(text.strip().split())  # strip, split, join to remove extra spaces
 
     def get_response(self, user_id, text, context):
         logger.info('--------------------------------')
@@ -206,7 +199,7 @@ class Dual_Encoder_Wrapper(Model_Wrapper):
                                                    response_set=self.cached_retrieved_data['r'],
                                                    response_embs=self.cached_retrieved_data['r_embs'],
                                                    k=1, batch_size=1, verbose=False)
-        response = cached_retrieved_data['r_retrieved'][0][0]
+        response = cached_retrieved_data['r_retrieved'][0][0].replace('@@ ', '').replace('@@', '')
 
         context.append(response)
         response = self._format_output(response)
