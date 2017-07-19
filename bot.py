@@ -105,7 +105,7 @@ def main():
     """
     !!!!!!! Put your bot id here !!!!!!!
     """
-    BOT_ID = conf.test_bot_token
+    BOT_ID = conf.bot_token
 
     if BOT_ID is None:
         raise Exception('You should enter your bot token/id!')

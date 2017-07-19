@@ -4,6 +4,7 @@ import logging
 import cPickle
 import numpy as np
 import theano
+import re
 import lasagne
 
 from hred.dialog_encdec import DialogEncoderDecoder
@@ -88,10 +89,10 @@ class HRED_Wrapper(Model_Wrapper):
         logger.info('Generating HRED response for user %s.' % user_id)
         text = self._preprocess(text, len(context))
         context.append(text)
-        context = list(context)
-        logger.info('Using context: %s' % ' '.join(context))
-        samples, costs = self.sampler.sample([' '.join(context),], ignore_unk=True, verbose=False, return_words=True)
+        logger.info('Using context: %s' % ' '.join(list(context)))
+        samples, costs = self.sampler.sample([' '.join(list(context)),], ignore_unk=True, verbose=False, return_words=True)
         response = samples[0][0].replace('@@ ', '').replace('@@', '')
+        response = re.sub('<[^>]+>', '', response) # remove the speaker information if present
         context.append(response)
         response = self._format_output(response)
         logger.info('Response: %s' % response)
