@@ -103,10 +103,12 @@ class Dual_Encoder_Wrapper(Model_Wrapper):
                 self.model = cPickle.load(handle)
         except Exception as e:
             logger.error("%s\n ERROR: couldn't load the model" % e)
+            logger.info("Will create a new one with pretrained parameters")
             # Loading old arguments
             with open('%s_args.pkl' % model_prefix, 'rb') as handle:
                 old_args = cPickle.load(handle)
 
+            logger.info("Loading data...")
             with open('%s' % data_fname, 'rb') as handle:
                 train_data, val_data, test_data = cPickle.load(handle)
             data = {'train': train_data, 'val': val_data, 'test': test_data}
@@ -118,7 +120,7 @@ class Dual_Encoder_Wrapper(Model_Wrapper):
                 W[idx] = np.random.uniform(-0.25, 0.25, old_args.emb_size)
             logger.info("W.shape: %s" % (W.shape,))
 
-            logger.info("Creating a new one...")
+            logger.info("Creating model...")
             self.model = self._create_model(data, W, word2idx, idx2word, old_args)
 
             logger.info("Set the learned weights...")
