@@ -139,7 +139,7 @@ class Dual_Encoder_Wrapper(Model_Wrapper):
             self.model.timings = timings  # load last timings (when no improvement was done)
         logger.info("Model loaded.")
 
-        with open("%s_r-encs.pkl") as handle:
+        with open("%s_r-encs.pkl" % model_prefix, 'rb') as handle:
             self.cached_retrieved_data = cPickle.load(handle)
 
         self.speaker_tokens = ['<first_speaker>', '<second_speaker>']
