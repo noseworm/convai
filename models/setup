@@ -5,7 +5,7 @@ hred="https://github.com/julianser/hed-dlg-truncated.git"
 de="https://github.com/NicolasAG/discriminator.git"
 
 echo "-------Cloning models-----------"
-git clone "$hred" hred/
+#git clone "$hred" hred/
 
 git clone "$de" dual_encoder/
 cd dual_encoder/

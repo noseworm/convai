@@ -14,10 +14,10 @@ unzip "$hred_twitter_model"
 wget "$location_base$hred_reddit_model"
 unzip "$hred_reddit_model"
 
-wget $location_base$de_reddit_model"
+wget "$location_base$de_reddit_model"
 unzip "$de_reddit_model"
 
-wget $location_base$de_reddit_data"
+wget "$location_base$de_reddit_data"
 unzip "$de_reddit_data"
 
 echo "-------Models downloaded-----------"

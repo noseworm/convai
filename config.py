@@ -21,8 +21,8 @@ config_data = {
         },
         'de': {
             'reddit_model_prefix':'data/reddit-bpe5k_exp2/reddit_exp2',
-            'reddit_data_file':'data/DE/DE.dataset.pkl',
-            'reddit_dict_file':'data/DE/DE.dict.pkl'
+            'reddit_data_file':'data/DE.dataset.pkl',
+            'reddit_dict_file':'data/DE.dict.pkl'
         }
 }
 
