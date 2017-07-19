@@ -134,6 +134,10 @@ RUN pip --no-cache-dir install git+git://github.com/Theano/Theano.git@${THEANO_V
                 \n[DebugMode]\ncheck_finite=1" \
         > /root/.theanorc
 
+# Install Pytorch
+RUN pip --no-cache-dir install http://download.pytorch.org/whl/cu75/torch-0.1.12.post2-cp27-none-linux_x86_64.whl
+RUN pip --no-cache-dir install torchvision
+
 # copy the current repository
 COPY . /root/convai
 
