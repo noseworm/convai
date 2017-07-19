@@ -23,6 +23,10 @@ config_data = {
             'reddit_model_prefix':'data/reddit-bpe5k_exp2/reddit_exp2',
             'reddit_data_file':'data/DE.dataset.pkl',
             'reddit_dict_file':'data/DE.dict.pkl'
+        },
+        'followup':{
+            'model_prefix':'data/followup/',
+            'dict_file':'data/followup/TrainingSmall.dict.pkl'
         }
 }
 

@@ -12,7 +12,7 @@ from hred.state import prototype_state
 import hred.search as search
 
 from dual_encoder.model import Model as DE_Model
-
+from hredqa.hred_pytorch import HRED_QA
 
 logger = logging.getLogger(__name__)
 
@@ -194,8 +194,7 @@ class Dual_Encoder_Wrapper(Model_Wrapper):
         logger.info('Generating DE response for user %s.' % user_id)
         text = self._preprocess(text, len(context))
         context.append(text)
-        context = list(context)
-        logger.info('Using context: %s' % ' '.join(context))
+        logger.info('Using context: %s' % ' '.join(list(context)))
 
         cached_retrieved_data = self.model.retrieve(context_set=[' '.join(context)],
                                                    response_set=self.cached_retrieved_data['r'],
@@ -203,9 +202,51 @@ class Dual_Encoder_Wrapper(Model_Wrapper):
                                                    k=1, batch_size=1, verbose=False)
         response = cached_retrieved_data['r_retrieved'][0][0].replace('@@ ', '').replace('@@', '')
 
-        context.append(response)
         response = self._format_output(response)
+        context.append(response) 
         logger.info('Response: %s' % response)
         return response, context
+
+class HREDQA_Wrapper(Model_Wrapper):
+    def __init__(self, model_prefix, dict_fname, name):
+        super(HREDQA_Wrapper, self).__init__(model_prefix, name)
+
+        self.model = HRED_QA(dictionary=dict_fname,
+                encoder_file='{}encoder_5.model'.format(model_prefix),
+                decoder_file='{}decoder_5.model'.format(model_prefix),
+                context_file='{}context_5.model'.format(model_prefix)
+                )
+
+	self.speaker_tokens = ['<first_speaker>', '<second_speaker>']
+ 
+    def _preprocess(self, text, context_length):
+        text = text.replace("'", " '")  # TODO: apply same tokenization script as in data creating
+        text = '%s %s </s>' % (self.speaker_tokens[context_length % 2], text.strip().lower())
+        return text
+
+    def _get_sentences(self,context):
+        sents = [re.sub('<[^>]+>', '', p) for p in context]
+        return sents
+
+    def _format_output(self, text):
+        text = text.replace(" '", "'")  # TODO: come up with a smarter reverse tokenization system?
+        text = re.sub('<[^>]+>', '', text)
+        if '?' not in text:
+            text = text + ' ?'
+        return ' '.join(text.strip().split())  # strip, split, join to remove extra spaces
+
+    def get_response(self, user_id, text, context):
+        logger.info('------------------------------------')
+        logger.info('Generating Followup question for user %s.' % user_id)
+        text = self._preprocess(text, len(context))
+        context.append(text)
+        logger.info('Using context: %s' % ' '.join(list(context)))
+
+        response = self.model.evaluate(self.model.encoder_model,self.model.decoder_model,self.model.context_model,self._get_sentences(context))
+        response = ' '.join(response)
+        response = self._format_output(response)
+        context.append(self._preprocess(response,len(context)))
+        return response,context
+
 
 
