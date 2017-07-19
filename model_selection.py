@@ -21,6 +21,9 @@ class ModelSelection(object):
     def get_response(self,chat_id,text,context):
         # if text containes /start, dont add it to the context
         if '/start' in text:
+            # TODO: handle the article text!!
+            # - process it in the wrappers and store it for that `chat_id`
+
             # generate first response or not?
             resp = 'Nice article, what is it about?'
             context.append('<first_speaker>' + resp + '</s>')

@@ -95,7 +95,7 @@ class HRED_Wrapper(Model_Wrapper):
 
 class Dual_Encoder_Wrapper(Model_Wrapper):
 
-    def __int__(self, model_prefix, data_fname, dict_fname, name):
+    def __init__(self, model_prefix, data_fname, dict_fname, name):
         super(Dual_Encoder_Wrapper, self).__init__(model_prefix, name)
 
         try:
