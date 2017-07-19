@@ -23,7 +23,7 @@ class ModelSelection(object):
         if '/start' in text:
             # generate first response or not?
             resp = 'Nice article, what is it about?'
-            context.append(resp)
+            context.append('<first_speaker>' + resp + '</s>')
             return resp,context
         origin_context = copy.deepcopy(context)
         resp1,cont1 = self.hred_model_twitter.get_response(chat_id,text,origin_context)

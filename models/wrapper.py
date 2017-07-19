@@ -81,6 +81,7 @@ class HRED_Wrapper(Model_Wrapper):
         text = text.replace(" '", "'")
         for token in self.remove_tokens:
             text = text.replace(token, '')
+        text = re.sub('<[^>]+>', '', text) # remove the speaker information if present
         return text
 
     # must contain this method for the bot
@@ -92,7 +93,6 @@ class HRED_Wrapper(Model_Wrapper):
         logger.info('Using context: %s' % ' '.join(list(context)))
         samples, costs = self.sampler.sample([' '.join(list(context)),], ignore_unk=True, verbose=False, return_words=True)
         response = samples[0][0].replace('@@ ', '').replace('@@', '')
-        response = re.sub('<[^>]+>', '', response) # remove the speaker information if present
         context.append(response)
         response = self._format_output(response)
         logger.info('Response: %s' % response)
