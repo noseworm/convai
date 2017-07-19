@@ -101,8 +101,8 @@ class Dual_Encoder_Wrapper(Model_Wrapper):
         try:
             with open('%s_model.pkl' % model_prefix, 'rb') as handle:
                 self.model = cPickle.load(handle)
-        except cPickle.UnpicklingError:
-            logger.error("cPickle.UnpicklingError: couldn't load the model")
+        except Exception as e:
+            logger.error("%s\n ERROR: couldn't load the model" % e)
             # Loading old arguments
             with open('%s_args.pkl' % model_prefix, 'rb') as handle:
                 old_args = cPickle.load(handle)
