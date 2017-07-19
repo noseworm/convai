@@ -18,6 +18,11 @@ config_data = {
             'reddit_model_prefix':'data/reddit_model/1485212785.88_RedditHRED',
             'twitter_dict_file':'data/twitter_model/Dataset.dict-5k.pkl',
             'reddit_dict_file':'data/reddit_model/Training.dict.pkl'
+        },
+        'de': {
+            'reddit_model_prefix':'data/reddit-bpe5k_exp2/reddit_exp2',
+            'reddit_data_file':'data/DE/DE.dataset.pkl',
+            'reddit_dict_file':'data/DE/DE.dict.pkl'
         }
 }
 

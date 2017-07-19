@@ -4,8 +4,8 @@
 location_base="http://132.206.3.23:8030/"
 hred_twitter_model="twitter_model.zip"
 hred_reddit_model="reddit_model.zip"
-hred_nicolas_model="reddit-bpe5k_exp2.zip"
-
+de_reddit_model="reddit-bpe5k_exp2.zip"
+de_reddit_data="DE.zip"
 
 echo "-------Downloading models-----------"
 wget "$location_base$hred_twitter_model"
@@ -14,7 +14,10 @@ unzip "$hred_twitter_model"
 wget "$location_base$hred_reddit_model"
 unzip "$hred_reddit_model"
 
-wget $location_base$hred_nicolas_model"
-unzip "$hred_nicolas_model"
+wget $location_base$de_reddit_model"
+unzip "$de_reddit_model"
+
+wget $location_base$de_reddit_data"
+unzip "$de_reddit_data"
 
 echo "-------Models downloaded-----------"

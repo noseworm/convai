@@ -2,8 +2,14 @@
 
 # clone / download the code files here, and install any dependencies
 hred="https://github.com/julianser/hed-dlg-truncated.git"
+de="https://github.com/NicolasAG/discriminator.git"
 
 echo "-------Cloning models-----------"
 git clone "$hred" hred/
+
+git clone "$de" dual_encoder/
+cd dual_encoder/
+git checkout retriever  # make sure to be on the `retriever` branch
+cd ../
 
 echo "-------Models downloaded-----------"

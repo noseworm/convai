@@ -18,3 +18,4 @@ dockerversion/version_autogen_unix.go
 vendor/pkg/
 # vim endpoints
 *.*~
+.idea

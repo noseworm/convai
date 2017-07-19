@@ -24,9 +24,10 @@ import model_selection
 import config
 conf = config.get_config()
 import logging
-logging.basicConfig(level=logging.INFO,
-        format='%(asctime)s %(name)s.%(funcName)s +%(lineno)s: %(levelname)-8s [%(process)d] %(message)s',
-        )
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(name)s.%(funcName)s +%(lineno)s: %(levelname)-8s [%(process)d] %(message)s',
+)
 
 MAX_CONTEXT = 3
 
