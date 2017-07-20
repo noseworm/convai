@@ -211,7 +211,7 @@ class Dual_Encoder_Wrapper(Model_Wrapper):
         response = cached_retrieved_data['r_retrieved'][0][0].replace('@@ ', '').replace('@@', '')
 
         response = self._format_output(response)  # remove all tags to avoid having <unk>
-        context.append(self._preprocess(response, len(context))  # add appropriate tags to the response in the context
+        context.append(self._preprocess(response, len(context)))  # add appropriate tags to the response in the context
         logger.info('Response: %s' % response)
         return response, context
 
