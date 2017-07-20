@@ -88,7 +88,7 @@ class HRED_Wrapper(Model_Wrapper):
         samples, costs = self.sampler.sample([' '.join(list(context)),], ignore_unk=True, verbose=False, return_words=True)
         response = samples[0][0].replace('@@ ', '').replace('@@', '')
         response = self._format_output(response)  # remove all tags to avoid having <unk>
-        context.append(self._preprocess(response, len(context))  # add appropriate tags to the response in the context
+        context.append(self._preprocess(response, len(context)))  # add appropriate tags to the response in the context
         logger.info('Response: %s' % response)
         return response, context
 
@@ -202,8 +202,8 @@ class Dual_Encoder_Wrapper(Model_Wrapper):
         response_set_idx = range(len(self.cached_retrieved_data['r']))
         np.random.shuffle(response_set_idx)
         response_set_idx = response_set_idx[:self.n_resp]
-        response_set_str = [r for i,r in enumerate(self.cached_retrieved_data['r']) if i in response_set_idx]
-        response_set_embs = [e for i,e in enumerate(self.cached_retrieved_data['r_embs']) if i in response_set_idx]
+        response_set_str = [self.cached_retrieved_data['r'][i] for i in response_set_idx]
+        response_set_embs = [self.cached_retrieved_data['r_embs'][i] for i in response_set_idx]
 
         cached_retrieved_data = self.model.retrieve(context_set=[' '.join(list(context))],
                                                    response_set=response_set_str,
