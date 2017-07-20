@@ -41,29 +41,38 @@ class ConvAIRLLBot:
         self.context = {} # keep contexts here
 
     def observe(self, m):
-        if self.chat_id is None and m['message']['text'].startswith('/start '):
-            self.chat_id = m['message']['chat']['id']
-            self.context[self.chat_id] = collections.deque(maxlen=MAX_CONTEXT)
-            logging.info("Start new chat #%s" % self.chat_id)
-        elif self.chat_id is not None and m['message']['text'] == '/end':
-            logging.info("End chat #%s" % self.chat_id)
-            self.context[self.chat_id] = collections.deque(maxlen=MAX_CONTEXT)
-            self.chat_id = None
-            self.observation = None
-            return
-
         if self.chat_id is None:
-            logging.info("Dialog not started yet. Ignore message.")
-        elif m['message']['chat']['id'] == self.chat_id:
-            logging.info("Accept message as part of chat #%s" % self.chat_id)
-            self.observation = m['message']['text']
-            return self.observation
+            if m['message']['text'].startswith('/start '):
+                self.chat_id = m['message']['chat']['id']
+                self.observation = m['message']['text']
+                self.context[self.chat_id] = collections.deque(maxlen=MAX_CONTEXT)
+                logging.info("Start new chat #%s" % self.chat_id)
+            else:
+                self.observation = None
+                logging.info("chat not started yet. Ignore message")
+
         else:
-            logging.info("Multiple dialogues are not allowed. Ignore message.")
+            if self.chat_id == m['message']['chat']['id']:
+                if m['message']['text'] == '/end':
+                    logging.info("End chat #%s" % self.chat_id)
+                    self.context[self.chat_id] = collections.deque(maxlen=MAX_CONTEXT)
+                    self.chat_id = None
+                    self.observation = None
+                else:
+                    self.observation = m['message']['text']
+                    logging.info("Accept message as part of chat #%s" % self.chat_id)
+            else:
+                self.observation = None
+                logging.info("Multiple dialogues are not allowed. Ignore message.")
+        return self.observation
 
     def act(self):
         if self.chat_id is None:
             logging.info("Dialog not started yet. Do not act.")
+            return
+
+        if self.observation is None:
+            logging.info("No new messages for chat #%s. Do not act." % self.chat_id)
             return
 
         message = {
@@ -110,35 +119,38 @@ def main():
     if BOT_ID is None:
         raise Exception('You should enter your bot token/id!')
 
-    BOT_URL = os.path.join('https://convaibot.herokuapp.com/', BOT_ID)
+    BOT_URL = os.path.join('https://ipavlov.mipt.ru/nipsrouter/', BOT_ID)
 
     bot = ConvAIRLLBot()
     print "loading models"
     mSelect.initialize_models()
 
     while True:
-        logging.info("Get updates from server")
-        res = requests.get(os.path.join(BOT_URL, 'getUpdates'))
+        try:
+            time.sleep(1)
+            logging.info("Get updates from server")
+            res = requests.get(os.path.join(BOT_URL, 'getUpdates'))
 
-        if res.status_code != 200:
-            logging.info(res.text)
-            res.raise_for_status()
+            if res.status_code != 200:
+                logging.info(res.text)
+                res.raise_for_status()
 
-        logging.info("Got %s new messages" % len(res.json()))
-        for m in res.json():
-            logging.info("Process message %s" % m)
-            bot.observe(m)
-            new_message = bot.act()
-            if new_message is not None:
-                logging.info("Send response to server.")
-                res = requests.post(os.path.join(BOT_URL, 'sendMessage'),
-                                    json=new_message,
-                                    headers={'Content-Type': 'application/json'})
-                if res.status_code != 200:
-                    logging.info(res.text)
-                    res.raise_for_status()
-        logging.info("Sleep for 1 sec. before new try")
-        time.sleep(1)
+            logging.info("Got %s new messages" % len(res.json()))
+            for m in res.json():
+                logging.info("Process message %s" % m)
+                bot.observe(m)
+                new_message = bot.act()
+                if new_message is not None:
+                    logging.info("Send response to server.")
+                    res = requests.post(os.path.join(BOT_URL, 'sendMessage'),
+                                        json=new_message,
+                                        headers={'Content-Type': 'application/json'})
+                    if res.status_code != 200:
+                        logging.info(res.text)
+                        res.raise_for_status()
+            logging.info("Sleep for 1 sec. before new try")
+        except Exception as e:
+            logging.error(e)
 
 
 if __name__ == '__main__':
