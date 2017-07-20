@@ -87,15 +87,15 @@ class HRED_Wrapper(Model_Wrapper):
         logger.info('Using context: %s' % ' '.join(list(context)))
         samples, costs = self.sampler.sample([' '.join(list(context)),], ignore_unk=True, verbose=False, return_words=True)
         response = samples[0][0].replace('@@ ', '').replace('@@', '')
-        context.append(response)
-        response = self._format_output(response)
+        response = self._format_output(response)  # remove all tags to avoid having <unk>
+        context.append(self._preprocess(response, len(context))  # add appropriate tags to the response in the context
         logger.info('Response: %s' % response)
         return response, context
 
 
 class Dual_Encoder_Wrapper(Model_Wrapper):
 
-    def __init__(self, model_prefix, data_fname, dict_fname, name):
+    def __init__(self, model_prefix, data_fname, dict_fname, name, n_resp=10000):
         super(Dual_Encoder_Wrapper, self).__init__(model_prefix, name)
 
         try:
@@ -141,6 +141,7 @@ class Dual_Encoder_Wrapper(Model_Wrapper):
 
         with open("%s_r-encs.pkl" % model_prefix, 'rb') as handle:
             self.cached_retrieved_data = cPickle.load(handle)
+        self.n_resp = n_resp
 
         self.speaker_tokens = ['<first_speaker>', '<second_speaker>']
 
@@ -196,16 +197,24 @@ class Dual_Encoder_Wrapper(Model_Wrapper):
         context.append(text)
         logger.info('Using context: %s' % ' '.join(list(context)))
 
-        cached_retrieved_data = self.model.retrieve(context_set=[' '.join(context)],
-                                                   response_set=self.cached_retrieved_data['r'],
-                                                   response_embs=self.cached_retrieved_data['r_embs'],
+        # TODO: use tf-idf as a pre-filtering step to only retrive from `self.n_resp`
+        # for now, sample `self.n_resp` randomly without replacement
+        response_set_idx = range(len(self.cached_retrieved_data['r']))
+        np.random.shuffle(response_set_idx)
+        response_set_str = np.asarray(self.cached_retrieved_data['r'])[response_set_idx[:self.n_resp]]
+        response_set_embs = np.asarray(self.cached_retrieved_data['r_embs'])[response_set_idx[:self.n_resp]]
+
+        cached_retrieved_data = self.model.retrieve(context_set=[' '.join(list(context))],
+                                                   response_set=response_set_str,
+                                                   response_embs=response_set_embs,
                                                    k=1, batch_size=1, verbose=False)
         response = cached_retrieved_data['r_retrieved'][0][0].replace('@@ ', '').replace('@@', '')
 
-        response = self._format_output(response)
-        context.append(response) 
+        response = self._format_output(response)  # remove all tags to avoid having <unk>
+        context.append(self._preprocess(response, len(context))  # add appropriate tags to the response in the context
         logger.info('Response: %s' % response)
         return response, context
+
 
 class HREDQA_Wrapper(Model_Wrapper):
     def __init__(self, model_prefix, dict_fname, name):
@@ -246,7 +255,7 @@ class HREDQA_Wrapper(Model_Wrapper):
         response = ' '.join(response)
         response = self._format_output(response)
         context.append(self._preprocess(response,len(context)))
-        return response,context
+        return response, context
 
 
 
