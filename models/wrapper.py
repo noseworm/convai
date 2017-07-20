@@ -201,8 +201,9 @@ class Dual_Encoder_Wrapper(Model_Wrapper):
         # for now, sample `self.n_resp` randomly without replacement
         response_set_idx = range(len(self.cached_retrieved_data['r']))
         np.random.shuffle(response_set_idx)
-        response_set_str = np.asarray(self.cached_retrieved_data['r'])[response_set_idx[:self.n_resp]]
-        response_set_embs = np.asarray(self.cached_retrieved_data['r_embs'])[response_set_idx[:self.n_resp]]
+        response_set_idx = response_set_idx[:self.n_resp]
+        response_set_str = [r for i,r in enumerate(self.cached_retrieved_data['r']) if i in response_set_idx]
+        response_set_embs = [e for i,e in enumerate(self.cached_retrieved_data['r_embs']) if i in response_set_idx]
 
         cached_retrieved_data = self.model.retrieve(context_set=[' '.join(list(context))],
                                                    response_set=response_set_str,
