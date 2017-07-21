@@ -42,7 +42,8 @@ def get_response(bot, update):
     _check_user(update.message.chat_id)
     model_type = ai.history[update.message.chat_id]['model']
     if model_type in ai.models:
-        text, context = ai.models[model_type].get_response(update.message.chat_id, update.message.text, ai.history[update.message.chat_id]['context'])
+        text, context = ai.models[model_type].get_response(update.message.chat_id, update.message.text,
+                                                           ai.history[update.message.chat_id]['context'])
         ai.history[update.message.chat_id]['context'] = context
     else:
         text = 'This model is not implemented yet.'

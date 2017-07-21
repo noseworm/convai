@@ -1,18 +1,19 @@
 # should contain wrapper classes
 
-import logging
 import cPickle
+import logging
 import numpy as np
-import theano
 import re
+
 import lasagne
-
-from hred.dialog_encdec import DialogEncoderDecoder
-from hred.state import prototype_state
-import hred.search as search
-
+import theano
 from dual_encoder.model import Model as DE_Model
 from hredqa.hred_pytorch import HRED_QA
+
+import hred.search as search
+import utils
+from hred.dialog_encdec import DialogEncoderDecoder
+from hred.state import prototype_state
 
 logger = logging.getLogger(__name__)
 
@@ -30,10 +31,23 @@ class Model_Wrapper(object):
         """
         self.model_prefix = model_prefix
         self.name = name
+        self.speaker_token = ['<first_speaker>', '<second_speaker>']
+        if self.name == 'hred-reddit':
+            self.speaker_token = ['<speaker_1>', '<speaker_2']
 
-    def get_response(self, user_id, text, context):
+    def _format_to_model(self, text, context_length):
+        text = utils.tokenize_utterance(text)
+        text = '%s %s </s>' % (self.speaker_token[context_length % 2], text.strip().lower())
+        return text
+
+    def _format_to_user(self, text):
+        text = utils.detokenize_utterance(text)
+        return ' '.join(text.strip().split())  # strip, split, join to remove extra spaces
+
+    def get_response(self, user_id, text, context, article=None):
         """
         Generate a new response, and add it to the context
+        :param article:
         :param user_id: id of the person we chat with
         :param text: the new utterance we just received
         :type text: str
@@ -56,39 +70,31 @@ class HRED_Wrapper(Model_Wrapper):
         with open(state_path, 'r') as handle:
             state.update(cPickle.load(handle))
         state['dictionary'] = dict_file
-        print 'Building %s model...' % name
+        logger.info('Building %s model...' % name)
         self.model = DialogEncoderDecoder(state)
-        print 'Building sampler...'
+        logger.info('Building sampler...')
         self.sampler = search.BeamSampler(self.model)
-        print 'Loading model...'
+        logger.info('Loading model...')
         self.model.load(model_path)
-        print 'Model built (%s).' % name
-
-        self.speaker_token = ['<first_speaker>', '<second_speaker>']
-        if name == 'hred-reddit':
-            self.speaker_token = ['<speaker_1>', '<speaker_2']
-
-    def _preprocess(self, text, context_length):
-        text = text.replace("'", " '")  # TODO: apply same tokenization script as in data creating
-        text = '%s %s </s>' % (self.speaker_token[context_length%2], text.strip().lower())
-        return text
-
-    def _format_output(self, text):
-        text = text.replace(" '", "'")
-        text = re.sub('<[^>]+>', '', text) # remove all <tags>
-        return ' '.join(text.strip().split())  # strip, split, join to remove extra spaces
+        logger.info('Model built (%s).' % name)
 
     # must contain this method for the bot
-    def get_response(self, user_id, text, context):
+    def get_response(self, user_id, text, context, article=None):
         logger.info('--------------------------------')
         logger.info('Generating HRED response for user %s.' % user_id)
-        text = self._preprocess(text, len(context))
+        text = self._format_to_model(text, len(context))
         context.append(text)
         logger.info('Using context: %s' % ' '.join(list(context)))
-        samples, costs = self.sampler.sample([' '.join(list(context)),], ignore_unk=True, verbose=False, return_words=True)
+
+        samples, costs = self.sampler.sample(
+            [' '.join(list(context))],
+            ignore_unk=True,
+            verbose=False,
+            return_words=True
+        )
         response = samples[0][0].replace('@@ ', '').replace('@@', '')
-        response = self._format_output(response)  # remove all tags to avoid having <unk>
-        context.append(self._preprocess(response, len(context)))  # add appropriate tags to the response in the context
+        response = self._format_to_user(response)  # remove all tags to avoid having <unk>
+        context.append(self._format_to_model(response, len(context)))  # add appropriate tags to the response in the context
         logger.info('Response: %s' % response)
         return response, context
 
@@ -143,8 +149,6 @@ class Dual_Encoder_Wrapper(Model_Wrapper):
             self.cached_retrieved_data = cPickle.load(handle)
         self.n_resp = n_resp
 
-        self.speaker_tokens = ['<first_speaker>', '<second_speaker>']
-
     def _create_model(self, data, w, word2idx, idx2word, args):
         return DE_Model(
             data=data,
@@ -180,20 +184,10 @@ class Dual_Encoder_Wrapper(Model_Wrapper):
             act_penalty=args.act_penalty  # default 500
         )
 
-    def _preprocess(self, text, context_length):
-        text = text.replace("'", " '")  # TODO: apply same tokenization script as in data creating
-        text = '%s %s </s>' % (self.speaker_tokens[context_length % 2], text.strip().lower())
-        return text
-
-    def _format_output(self, text):
-        text = text.replace(" '", "'")  # TODO: come up with a smarter reverse tokenization system?
-        text = re.sub('<[^>]+>', '', text) # remove all <tags>
-        return ' '.join(text.strip().split())  # strip, split, join to remove extra spaces
-
-    def get_response(self, user_id, text, context):
+    def get_response(self, user_id, text, context, article=None):
         logger.info('--------------------------------')
         logger.info('Generating DE response for user %s.' % user_id)
-        text = self._preprocess(text, len(context))
+        text = self._format_to_model(text, len(context))
         context.append(text)
         logger.info('Using context: %s' % ' '.join(list(context)))
 
@@ -205,14 +199,16 @@ class Dual_Encoder_Wrapper(Model_Wrapper):
         response_set_str = [self.cached_retrieved_data['r'][i] for i in response_set_idx]
         response_set_embs = [self.cached_retrieved_data['r_embs'][i] for i in response_set_idx]
 
-        cached_retrieved_data = self.model.retrieve(context_set=[' '.join(list(context))],
-                                                   response_set=response_set_str,
-                                                   response_embs=response_set_embs,
-                                                   k=1, batch_size=1, verbose=False)
+        cached_retrieved_data = self.model.retrieve(
+            context_set=[' '.join(list(context))],
+            response_set=response_set_str,
+            response_embs=response_set_embs,
+            k=1, batch_size=1, verbose=False
+        )
         response = cached_retrieved_data['r_retrieved'][0][0].replace('@@ ', '').replace('@@', '')
 
-        response = self._format_output(response)  # remove all tags to avoid having <unk>
-        context.append(self._preprocess(response, len(context)))  # add appropriate tags to the response in the context
+        response = self._format_to_user(response)  # remove all tags to avoid having <unk>
+        context.append(self._format_to_model(response, len(context)))  # add appropriate tags to the response in the context
         logger.info('Response: %s' % response)
         return response, context
 
@@ -221,42 +217,37 @@ class HREDQA_Wrapper(Model_Wrapper):
     def __init__(self, model_prefix, dict_fname, name):
         super(HREDQA_Wrapper, self).__init__(model_prefix, name)
 
-        self.model = HRED_QA(dictionary=dict_fname,
-                encoder_file='{}encoder_5.model'.format(model_prefix),
-                decoder_file='{}decoder_5.model'.format(model_prefix),
-                context_file='{}context_5.model'.format(model_prefix)
-                )
+        self.model = HRED_QA(
+            dictionary=dict_fname,
+            encoder_file='{}encoder_5.model'.format(model_prefix),
+            decoder_file='{}decoder_5.model'.format(model_prefix),
+            context_file='{}context_5.model'.format(model_prefix)
+        )
 
-	self.speaker_tokens = ['<first_speaker>', '<second_speaker>']
- 
-    def _preprocess(self, text, context_length):
-        text = text.replace("'", " '")  # TODO: apply same tokenization script as in data creating
-        text = '%s %s </s>' % (self.speaker_tokens[context_length % 2], text.strip().lower())
-        return text
-
-    def _get_sentences(self,context):
+    def _get_sentences(self, context):
         sents = [re.sub('<[^>]+>', '', p) for p in context]
         return sents
 
-    def _format_output(self, text):
-        text = text.replace(" '", "'")  # TODO: come up with a smarter reverse tokenization system?
-        text = re.sub('<[^>]+>', '', text)
-        if '?' not in text:
+    def _format_to_user(self, text):
+        text = super(HREDQA_Wrapper, self)._format_to_user(text)
+        if not text.endswith('?'):
             text = text + ' ?'
         return ' '.join(text.strip().split())  # strip, split, join to remove extra spaces
 
-    def get_response(self, user_id, text, context):
+    def get_response(self, user_id, text, context, article=None):
         logger.info('------------------------------------')
         logger.info('Generating Followup question for user %s.' % user_id)
-        text = self._preprocess(text, len(context))
+        text = self._format_to_model(text, len(context))
         context.append(text)
         logger.info('Using context: %s' % ' '.join(list(context)))
 
-        response = self.model.evaluate(self.model.encoder_model,self.model.decoder_model,self.model.context_model,self._get_sentences(context))
+        response = self.model.evaluate(
+            self.model.encoder_model,
+            self.model.decoder_model,
+            self.model.context_model,
+            self._get_sentences(context)
+        )
         response = ' '.join(response)
-        response = self._format_output(response)
-        context.append(self._preprocess(response,len(context)))
+        response = self._format_to_user(response)
+        context.append(self._format_to_model(response, len(context)))
         return response, context
-
-
-

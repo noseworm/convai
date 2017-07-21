@@ -1,3 +1,4 @@
+spacy
 python-telegram-bot==6.1.0
 Lasagne==0.1
 pyprind==2.11.0

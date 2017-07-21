@@ -6,6 +6,10 @@ conf = config.get_config()
 from models.wrapper import HRED_Wrapper, Dual_Encoder_Wrapper, HREDQA_Wrapper
 import random
 import copy
+import spacy
+
+nlp = spacy.load('en')
+
 
 class ModelSelection(object):
 
@@ -20,16 +24,16 @@ class ModelSelection(object):
         self.de_model_reddit = Dual_Encoder_Wrapper(conf.de['reddit_model_prefix'], conf.de['reddit_data_file'], conf.de['reddit_dict_file'], 'de-reddit')
         self.qa_hred = HREDQA_Wrapper(conf.followup['model_prefix'],conf.followup['dict_file'],'followup_qa')
         # warmup the models before serving
-        r,_ = self.hred_model_twitter.get_response(1,'test statement',[])
-        r,_ = self.hred_model_reddit.get_response(1,'test statement',[])
-        r,_ = self.de_model_reddit.get_response(1,'test statement',[])
-        r,_ = self.qa_hred.get_response(1,'test statement',[])
+        r,_ = self.hred_model_twitter.get_response(1, 'test statement', [])
+        r,_ = self.hred_model_reddit.get_response(1, 'test statement', [])
+        r,_ = self.de_model_reddit.get_response(1, 'test statement', [])
+        r,_ = self.qa_hred.get_response(1, 'test statement', [])
 
     def get_response(self,chat_id,text,context):
         # if text containes /start, dont add it to the context
         if '/start' in text:
             # save the article for later use
-            self.article_text[chat_id] = text
+            self.article_text[chat_id] = nlp(text)
             # generate first response or not?
             # with some randomness generate the first response or leave blank
             if random.choice([True,False]):
@@ -43,26 +47,21 @@ class ModelSelection(object):
 
         outputs = []
         origin_context = copy.deepcopy(context)
-        resp1,cont1 = self.hred_model_twitter.get_response(chat_id,text,origin_context)
+        resp1,cont1 = self.hred_model_twitter.get_response(chat_id, text, origin_context, self.article_text[chat_id])
         outputs.append((resp1,cont1))
         origin_context = copy.deepcopy(context)
-        resp2,cont2 = self.hred_model_reddit.get_response(chat_id,text,origin_context)
+        resp2,cont2 = self.hred_model_reddit.get_response(chat_id, text, origin_context, self.article_text[chat_id])
         outputs.append((resp2,cont2))
         origin_context = copy.deepcopy(context)
-        resp3,cont3 = self.de_model_reddit.get_response(chat_id,text,origin_context)
+        resp3,cont3 = self.de_model_reddit.get_response(chat_id, text, origin_context, self.article_text[chat_id])
         outputs.append((resp3,cont3))
         origin_context = copy.deepcopy(context)
         if '?' not in text:
-            resp4,cont4 = self.qa_hred.get_response(chat_id,text,origin_context)
+            resp4,cont4 = self.qa_hred.get_response(chat_id, text, origin_context, self.article_text[chat_id])
             outputs.append((resp4,cont4))
 
         # chat selection logic
         # for now, select in random
         ch = random.choice(range(len(outputs)))
 
-	return outputs[ch]
-
-
-
-
-
+        return outputs[ch]
