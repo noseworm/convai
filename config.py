@@ -27,6 +27,9 @@ config_data = {
         'followup':{
             'model_prefix':'data/followup/',
             'dict_file':'data/followup/TrainingSmall.dict.pkl'
+        },
+        'candidate':{
+            'dict_file':'data/candidate_dataset.txt'
         }
 }
 

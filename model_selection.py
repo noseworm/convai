@@ -3,7 +3,7 @@
 # some logic-foo need to be done here.
 import config
 conf = config.get_config()
-from models.wrapper import HRED_Wrapper, Dual_Encoder_Wrapper, HREDQA_Wrapper
+from models.wrapper import HRED_Wrapper, Dual_Encoder_Wrapper, HREDQA_Wrapper, CandidateQuestions_Wrapper
 import random
 import copy
 import spacy
@@ -17,6 +17,7 @@ class ModelSelection(object):
         self.hred_model_twitter = None
         self.hred_model_reddit = None
         self.article_text = {}
+        self.candidate_model = {}
 
     def initialize_models(self):
         self.hred_model_twitter = HRED_Wrapper(conf.hred['twitter_model_prefix'], conf.hred['twitter_dict_file'], 'hred-twitter')
@@ -33,12 +34,14 @@ class ModelSelection(object):
         # if text containes /start, dont add it to the context
         if '/start' in text:
             # save the article for later use
-            self.article_text[chat_id] = nlp(text)
+            self.article_text[chat_id] = nlp(unicode(text))
+            self.candidate_model[chat_id] = CandidateQuestions_Wrapper(conf.candidate['dict_file'],self.article_text[chat_id])
             # generate first response or not?
             # with some randomness generate the first response or leave blank
             if random.choice([True,False]):
-                resp = 'Nice article, what is it about?'
-                context.append('<first_speaker>' + resp + '</s>')
+                #resp = 'Nice article, what is it about?'
+                resp,context = self.candidate_model[chat_id].get_response(chat_id,'',context)
+                #context.append('<first_speaker>' + resp + '</s>')
             else:
                 resp = ''
             return resp,context

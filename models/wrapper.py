@@ -14,6 +14,7 @@ import hred.search as search
 import utils
 from hred.dialog_encdec import DialogEncoderDecoder
 from hred.state import prototype_state
+from candidate import CandidateQuestions
 
 logger = logging.getLogger(__name__)
 
@@ -249,5 +250,32 @@ class HREDQA_Wrapper(Model_Wrapper):
         )
         response = ' '.join(response)
         response = self._format_to_user(response)
+        context.append(self._format_to_model(response, len(context)))
+        return response, context
+
+
+class CandidateQuestions_Wrapper(Model_Wrapper):
+    def __init__(self, model_prefix, article_text, dict_fname, name):
+        super(CandidateQuestions_Wrapper, self).__init__(model_prefix, name)
+
+        self.model = CandidateQuestions(article_text,dict_fname)
+
+    def _get_sentences(self, context):
+        sents = [re.sub('<[^>]+>', '', p) for p in context]
+        return sents
+
+    def _format_to_user(self, text):
+        text = super(HREDQA_Wrapper, self)._format_to_user(text)
+        if not text.endswith('?'):
+            text = text + ' ?'
+        return ' '.join(text.strip().split())  # strip, split, join to remove extra spaces
+
+    def get_response(self, user_id, text, context, article=None):
+        logger.info('------------------------------------')
+        logger.info('Generating candidate question for user %s.' % user_id)
+        text = self._format_to_model(text, len(context))
+        context.append(text)
+
+        response = self.model.get_response()
         context.append(self._format_to_model(response, len(context)))
         return response, context

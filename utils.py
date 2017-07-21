@@ -53,7 +53,7 @@ def tokenize_utterance(utterance):
     utterance = re.sub('\s+', ' ', utterance)
     utterance = utterance.strip()
 
-    utterance = utterance.replace('\xe2', ' <heart> ')
+    #utterance = utterance.replace('\xe2', ' <heart> ')
 
     # Convert @username to AT_USER
     utterance = re.sub('@[^\s]+', '<at>', utterance)
