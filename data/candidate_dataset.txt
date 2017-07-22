@@ -1,0 +1,29 @@
+Do you know who <person> is?
+Have you ever met <person>?
+Do you know what <person> did in his life?
+Do you like this <person> guy?
+Do you know <person> in person?
+What do you think about <org> ?
+Have you ever used any of <org>’s products or services ?
+Do you think you would like to work for <org> ?
+<gpe> seems like a nice place!
+Have you been to <gpe>?
+I have never been to <gpe>.
+Do you know anyone from <gpe>?
+I went to <gpe> once, I really enjoyed visiting it!
+Do you know where is <loc>?
+I need to get more <product> !
+Do you have any <product> ?
+Would you like any <product> ? I have many, I can give you one if you’re nice with me haha.
+Want to talk about <event> ?
+Any thoughts about <event> ?
+I think <event> was quite epic don’t you think?
+Do you like <work_of_art> ?
+Do you know who did <work_of_art> ?
+Do you know how to speak <language> ?
+Do you know what happened in <date>?
+What happened in <date>?
+What are the <norp> saying?
+
+
+

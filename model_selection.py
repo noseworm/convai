@@ -35,7 +35,8 @@ class ModelSelection(object):
         if '/start' in text:
             # save the article for later use
             self.article_text[chat_id] = nlp(unicode(text))
-            self.candidate_model[chat_id] = CandidateQuestions_Wrapper(conf.candidate['dict_file'],self.article_text[chat_id])
+            self.candidate_model[chat_id] = CandidateQuestions_Wrapper('',self.article_text[chat_id],
+                    conf.candidate['dict_file'],'candidate_question')
             # generate first response or not?
             # with some randomness generate the first response or leave blank
             if random.choice([True,False]):
@@ -50,17 +51,17 @@ class ModelSelection(object):
 
         outputs = []
         origin_context = copy.deepcopy(context)
-        resp1,cont1 = self.hred_model_twitter.get_response(chat_id, text, origin_context, self.article_text[chat_id])
+        resp1,cont1 = self.hred_model_twitter.get_response(chat_id, text, origin_context, self.article_text.get(chat_id,''))
         outputs.append((resp1,cont1))
         origin_context = copy.deepcopy(context)
-        resp2,cont2 = self.hred_model_reddit.get_response(chat_id, text, origin_context, self.article_text[chat_id])
+        resp2,cont2 = self.hred_model_reddit.get_response(chat_id, text, origin_context, self.article_text.get(chat_id,''))
         outputs.append((resp2,cont2))
         origin_context = copy.deepcopy(context)
         resp3,cont3 = self.de_model_reddit.get_response(chat_id, text, origin_context, self.article_text[chat_id])
         outputs.append((resp3,cont3))
         origin_context = copy.deepcopy(context)
         if '?' not in text:
-            resp4,cont4 = self.qa_hred.get_response(chat_id, text, origin_context, self.article_text[chat_id])
+            resp4,cont4 = self.qa_hred.get_response(chat_id, text, origin_context, self.article_text.get(chat_id,''))
             outputs.append((resp4,cont4))
 
         # chat selection logic
