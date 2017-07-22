@@ -24,4 +24,16 @@ unzip "$de_reddit_data"
 wget "$location_base$followup_data"
 unzip "$followup_data"
 
+# Stuff for DrQA
+GLOVE_DIR=glove
+mkdir -p $GLOVE_DIR
+wget http://nlp.stanford.edu/data/glove.840B.300d.zip -O $GLOVE_DIR/glove.840B.300d.zip
+unzip $GLOVE_DIR/glove.840B.300d.zip -d $GLOVE_DIR
+
+wget https://s3.amazonaws.com/fair-data/parlai/_models/drqa/squad.mdl
+
+# Download SpaCy English language models
+python3 -m spacy download en
+
+
 echo "-------Models downloaded-----------"
