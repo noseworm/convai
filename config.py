@@ -30,6 +30,9 @@ config_data = {
         },
         'candidate':{
             'dict_file':'data/candidate_dataset.txt'
+        },
+        'dumb':{
+            'dict_file':'data/dumb_questions.json'
         }
 }
 

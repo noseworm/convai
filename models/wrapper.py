@@ -15,6 +15,8 @@ import utils
 from hred.dialog_encdec import DialogEncoderDecoder
 from hred.state import prototype_state
 from candidate import CandidateQuestions
+import json
+import random
 
 logger = logging.getLogger(__name__)
 
@@ -277,5 +279,34 @@ class CandidateQuestions_Wrapper(Model_Wrapper):
         context.append(text)
 
         response = self.model.get_response()
+        context.append(self._format_to_model(response, len(context)))
+        return response, context
+
+class DumbQuestions_Wrapper(Model_Wrapper):
+    def __init__(self, model_prefix, dict_fname, name):
+        super(DumbQuestions_Wrapper, self).__init__(model_prefix, name)
+        self.data = json.load(open(dict_fname,'r'))
+
+    # check if user text is match to one of the keys
+    def isMatch(self,text):
+        for key,value in self.data.iteritems():
+            if re.match(key,text,re.IGNORECASE):
+                return True
+        return False
+
+    # return the key which matches
+    def getMatch(self,text):
+        for key,value in self.data.iteritems():
+            if re.match(key,text,re.IGNORECASE):
+                return key
+        return False
+
+    def get_response(self, user_id, text, context):
+        logger.info('------------------------------------')
+        logger.info('Generating dumb question for user %s.' % user_id)
+        ctext = self._format_to_model(text, len(context))
+        context.append(ctext)
+        key = self.getMatch(text)
+        response = random.choice(self.data[key])
         context.append(self._format_to_model(response, len(context)))
         return response, context
