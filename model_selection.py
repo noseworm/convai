@@ -3,7 +3,7 @@
 # some logic-foo need to be done here.
 import config
 conf = config.get_config()
-from models.wrapper import HRED_Wrapper, Dual_Encoder_Wrapper, HREDQA_Wrapper, CandidateQuestions_Wrapper, DumbQuestions_Wrapper
+from models.wrapper import HRED_Wrapper, Dual_Encoder_Wrapper, HREDQA_Wrapper, CandidateQuestions_Wrapper, DumbQuestions_Wrapper, DRQA_Wrapper
 import random
 import copy
 import spacy
@@ -25,11 +25,13 @@ class ModelSelection(object):
         self.de_model_reddit = Dual_Encoder_Wrapper(conf.de['reddit_model_prefix'], conf.de['reddit_data_file'], conf.de['reddit_dict_file'], 'de-reddit')
         self.qa_hred = HREDQA_Wrapper(conf.followup['model_prefix'],conf.followup['dict_file'],'followup_qa')
         self.dumb_qa = DumbQuestions_Wrapper('',conf.dumb['dict_file'],'dumb_qa')
+        self.drqa = DRQA_Wrapper('','','drqa')
         # warmup the models before serving
         r,_ = self.hred_model_twitter.get_response(1, 'test statement', [])
         r,_ = self.hred_model_reddit.get_response(1, 'test statement', [])
         r,_ = self.de_model_reddit.get_response(1, 'test statement', [])
         r,_ = self.qa_hred.get_response(1, 'test statement', [])
+        r,_ = self.drqa.get_response(1,'Where is Daniel?',[],'Daniel went to the kitchen')
 
     def get_response(self,chat_id,text,context):
         # if text containes /start, dont add it to the context
@@ -54,6 +56,10 @@ class ModelSelection(object):
             resp,context = self.dumb_qa.get_response(chat_id,text,context)
             return resp,context
 
+        # if text contains question, run DRQA
+        if '?' in text:
+            resp,context = self.drqa.get_response(chat_id,text,context,article=self.article_text[chat_id].text)
+            return resp,context
         outputs = []
         origin_context = copy.deepcopy(context)
         resp1,cont1 = self.hred_model_twitter.get_response(chat_id, text, origin_context, self.article_text.get(chat_id,''))

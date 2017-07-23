@@ -6,7 +6,7 @@ de="https://github.com/NicolasAG/discriminator.git"
 hredqa="https://github.com/koustuvsinha/hred-py"
 
 echo "-------Cloning models-----------"
-#git clone "$hred" hred/
+git clone "$hred" hred/
 
 git clone "$de" dual_encoder/
 cd dual_encoder/
@@ -15,8 +15,6 @@ cd ../
 
 git clone "$hredqa" hredqa/
 
-git clone https://github.com/facebookresearch/ParlAI.git ParlAI/
-cd ParlAI; python setup.py develop
-cd ..
+git clone https://github.com/Breakend/drqawrapper.git
 
 echo "-------Models downloaded-----------"
