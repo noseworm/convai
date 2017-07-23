@@ -39,6 +39,7 @@ class CandidateQuestions(object):
         self.token_distribution = sorted(self.token_distribution.items(), key=operator.itemgetter(1))
         self.token_distribution.reverse()
         self.top_n = top_n
+        self.done_responses = []
 
     def _get_entities(self):
         self.line2token = {} # dictionary containing which tokens correspond to which line
@@ -68,6 +69,10 @@ class CandidateQuestions(object):
         if token.ent_type_.lower() in self.entity2line:
             line = self.dataset[random.choice(self.entity2line[token.ent_type_.lower()])]
             response = re.sub('<(.*?)>',token.text,line)
+        if response in self.done_responses:
+            response = ''
+        else:
+            self.done_responses.append(response)
         logger.info('Response: %s' % response)
         return response
 

@@ -10,6 +10,8 @@ import spacy
 
 nlp = spacy.load('en')
 
+BORED_COUNT = 2
+
 
 class ModelSelection(object):
 
@@ -18,6 +20,7 @@ class ModelSelection(object):
         self.hred_model_reddit = None
         self.article_text = {}
         self.candidate_model = {}
+        self.boring_count = 0 # whenever user responds with single word text, we assume that they are bored. if counter hits = BORED_COUNT, ask a question
 
     def initialize_models(self):
         self.hred_model_twitter = HRED_Wrapper(conf.hred['twitter_model_prefix'], conf.hred['twitter_dict_file'], 'hred-twitter')
@@ -60,6 +63,15 @@ class ModelSelection(object):
         if '?' in text:
             resp,context = self.drqa.get_response(chat_id,text,context,article=self.article_text[chat_id].text)
             return resp,context
+
+        # if text contains one word, and it has happened before (twice), change the topic, ask a question (only if that question is not asked before)
+        if self.boring_count >= BORED_COUNT:
+            resp_c,context_c = self.candidate_model[chat_id].get_response(chat_id,'',copy.deepcopy(context))
+            if resp_c != '':
+                return resp_c,context_c
+        else:
+            self.boring_count += 1
+
         outputs = []
         origin_context = copy.deepcopy(context)
         resp1,cont1 = self.hred_model_twitter.get_response(chat_id, text, origin_context, self.article_text.get(chat_id,''))
