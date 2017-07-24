@@ -45,8 +45,8 @@ class ConvAIRLLBot:
 	chat_id = m['message']['chat']['id']
         if chat_id not in self.ai:
             if m['message']['text'].startswith('/start '):
-		self.ai[chat_id] = {}	
-		self.ai[chat_id]['chat_id'] = chat_id
+                self.ai[chat_id] = {}
+                self.ai[chat_id]['chat_id'] = chat_id
                 self.ai[chat_id]['observation'] = m['message']['text']
                 self.ai[chat_id]['context'] = collections.deque(maxlen=MAX_CONTEXT)
                 logging.info("Start new chat #%s" % self.chat_id)
