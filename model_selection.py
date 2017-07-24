@@ -7,6 +7,7 @@ from models.wrapper import HRED_Wrapper, Dual_Encoder_Wrapper, HREDQA_Wrapper, C
 import random
 import copy
 import spacy
+import re
 
 nlp = spacy.load('en')
 
@@ -20,6 +21,7 @@ class ModelSelection(object):
         self.hred_model_reddit = None
         self.article_text = {}
         self.candidate_model = {}
+	self.article_nouns = {}
         self.boring_count = 0 # whenever user responds with single word text, we assume that they are bored. if counter hits = BORED_COUNT, ask a question
 
     def initialize_models(self):
@@ -36,11 +38,18 @@ class ModelSelection(object):
         r,_ = self.qa_hred.get_response(1, 'test statement', [])
         r,_ = self.drqa.get_response(1,'Where is Daniel?',[],'Daniel went to the kitchen')
 
+    # get all the nouns from the text
+    def _get_nouns(self,chat_id):
+        self.article_nouns[chat_id] = [p.text for p in self.article_text[chat_id] if p.pos_ == 'NOUN']
+	print self.article_nouns[chat_id]
+
     def get_response(self,chat_id,text,context):
         # if text containes /start, dont add it to the context
         if '/start' in text:
             # save the article for later use
+            text = re.sub('\\start','',text)
             self.article_text[chat_id] = nlp(unicode(text))
+	    self._get_nouns(chat_id)
             self.candidate_model[chat_id] = CandidateQuestions_Wrapper('',self.article_text[chat_id],
                     conf.candidate['dict_file'],'candidate_question')
             # generate first response or not?
@@ -61,8 +70,16 @@ class ModelSelection(object):
 
         # if text contains question, run DRQA
         if '?' in text:
-            resp,context = self.drqa.get_response(chat_id,text,context,article=self.article_text[chat_id].text)
-            return resp,context
+	    # if there is a common noun between text and article, run drqa
+	    common = list(set(self.article_nouns[chat_id]).intersection(set(text.split(' '))))
+            print 'common',common
+	    if len(common) > 0:
+            	resp,context = self.drqa.get_response(chat_id,text,context,article=self.article_text[chat_id].text)
+	    	return resp,context
+	    else:
+		if random.choice([True,False,False,False]): # sampling with 0.25 probability
+		   resp,context = self.drqa.get_response(chat_id,text,context,article=self.article_text[chat_id].text)
+		   return resp,context
 
         # if text contains one word, and it has happened before (twice), change the topic, ask a question (only if that question is not asked before)
         if self.boring_count >= BORED_COUNT:
