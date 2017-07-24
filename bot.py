@@ -38,66 +38,64 @@ class ConvAIRLLBot:
     def __init__(self):
         self.chat_id = None
         self.observation = None
+	self.ai = {}
         self.context = {} # keep contexts here
 
     def observe(self, m):
-        if self.chat_id is None:
+	chat_id = m['message']['chat']['id']
+        if chat_id not in self.ai:
             if m['message']['text'].startswith('/start '):
-                self.chat_id = m['message']['chat']['id']
-                self.observation = m['message']['text']
-                self.context[self.chat_id] = collections.deque(maxlen=MAX_CONTEXT)
+		self.ai[chat_id] = {}	
+		self.ai[chat_id]['chat_id'] = chat_id
+                self.ai[chat_id]['observation'] = m['message']['text']
+                self.ai[chat_id]['context'] = collections.deque(maxlen=MAX_CONTEXT)
                 logging.info("Start new chat #%s" % self.chat_id)
             else:
-                self.observation = None
                 logging.info("chat not started yet. Ignore message")
 
         else:
-            if self.chat_id == m['message']['chat']['id']:
-                if m['message']['text'] == '/end':
-                    logging.info("End chat #%s" % self.chat_id)
-                    self.context[self.chat_id] = collections.deque(maxlen=MAX_CONTEXT)
-                    self.chat_id = None
-                    self.observation = None
-                else:
-                    self.observation = m['message']['text']
-                    logging.info("Accept message as part of chat #%s" % self.chat_id)
+	    if m['message']['text'] == '/end':
+                logging.info("End chat #%s" % chat_id)
+                del self.ai[chat_id]
             else:
-                self.observation = None
-                logging.info("Multiple dialogues are not allowed. Ignore message.")
-        return self.observation
+                self.ai[chat_id]['observation'] = m['message']['text']
+                logging.info("Accept message as part of chat #%s" % chat_id)
+        return chat_id
 
-    def act(self):
-        if self.chat_id is None:
-            logging.info("Dialog not started yet. Do not act.")
-            return
+    def act(self,chat_id,m):
+        data = {}
+        message = {
+            'chat_id': chat_id
+        }
 
-        if self.observation is None:
+        if chat_id not in self.ai:
+	   if m['message']['chat']['id'] == chat_id and m['message']['text'] == '/end':
+		logging.info("Decided to finish chat %s" % chat_id)
+		data['text'] = '/end'
+		data['evaluation'] = {
+			'quality': 0,
+			'breadth': 0,
+			'engagement': 0
+	    	}
+		message['text'] = json.dumps(data)
+		return message
+	   else:
+		logging.info("Dialog not started yet. Do not act.")
+                return
+
+        if self.ai[chat_id]['observation'] is None:
             logging.info("No new messages for chat #%s. Do not act." % self.chat_id)
             return
 
-        message = {
-            'chat_id': self.chat_id
-        }
-
         # select from our models here
-        text,context = mSelect.get_response(self.chat_id,self.observation,self.context[self.chat_id])
-        self.context[self.chat_id] = context
+        text,context = mSelect.get_response(chat_id,self.ai[chat_id]['observation'],self.ai[chat_id]['context'])
+        self.ai[chat_id]['context'] = context
         #texts = ['I love you!', 'Wow!', 'Really?', 'Nice!', 'Hi', 'Hello', '', '/end']
         #text = texts[random.randint(0, 7)]
 
-        data = {}
         if text == '':
             logging.info("Decided to do not respond and wait for new message")
             return
-        elif text == '/end':
-            logging.info("Decided to finish chat %s" % self.chat_id)
-            self.chat_id = None
-            data['text'] = '/end'
-            data['evaluation'] = {
-                'quality': 0,
-                'breadth': 0,
-                'engagement': 0
-            }
         else:
             logging.info("Decided to respond with text: %s" % text)
             data = {
@@ -119,7 +117,7 @@ def main():
     if BOT_ID is None:
         raise Exception('You should enter your bot token/id!')
 
-    BOT_URL = os.path.join('https://ipavlov.mipt.ru/nipsrouter/', BOT_ID)
+    BOT_URL = os.path.join('https://ipavlov.mipt.ru/nipsrouter-alt/', BOT_ID)
 
     bot = ConvAIRLLBot()
     print "loading models"
@@ -138,9 +136,10 @@ def main():
             logging.info("Got %s new messages" % len(res.json()))
             for m in res.json():
                 logging.info("Process message %s" % m)
-                bot.observe(m)
-                new_message = bot.act()
+                chat_id = bot.observe(m) # return chat_id here
+                new_message = bot.act(chat_id,m) # pass chat_id to act
                 if new_message is not None:
+		    print new_message
                     logging.info("Send response to server.")
                     res = requests.post(os.path.join(BOT_URL, 'sendMessage'),
                                         json=new_message,
