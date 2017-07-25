@@ -21,7 +21,7 @@ class ModelSelection(object):
         self.hred_model_reddit = None
         self.article_text = {}
         self.candidate_model = {}
-	self.article_nouns = {}
+        self.article_nouns = {}
         self.boring_count = 0 # whenever user responds with single word text, we assume that they are bored. if counter hits = BORED_COUNT, ask a question
 
     def initialize_models(self):
@@ -41,7 +41,7 @@ class ModelSelection(object):
     # get all the nouns from the text
     def _get_nouns(self,chat_id):
         self.article_nouns[chat_id] = [p.text for p in self.article_text[chat_id] if p.pos_ == 'NOUN']
-	print self.article_nouns[chat_id]
+        print self.article_nouns[chat_id]
 
     def get_response(self,chat_id,text,context):
         # if text containes /start, dont add it to the context
@@ -49,7 +49,7 @@ class ModelSelection(object):
             # save the article for later use
             text = re.sub('\\start','',text)
             self.article_text[chat_id] = nlp(unicode(text))
-	    self._get_nouns(chat_id)
+            self._get_nouns(chat_id)
             self.candidate_model[chat_id] = CandidateQuestions_Wrapper('',self.article_text[chat_id],
                     conf.candidate['dict_file'],'candidate_question')
             # generate first response or not?
@@ -81,13 +81,14 @@ class ModelSelection(object):
 		   resp,context = self.drqa.get_response(chat_id,text,context,article=self.article_text[chat_id].text)
 		   return resp,context
 
-        # if text contains one word, and it has happened before (twice), change the topic, ask a question (only if that question is not asked before)
+        # if text contains 2 words or less, and it has happened before (twice), change the topic, ask a question (only if that question is not asked before)
+        if len(text.strip().split()) <= 2:
+            self.boring_count += 1
         if self.boring_count >= BORED_COUNT:
             resp_c,context_c = self.candidate_model[chat_id].get_response(chat_id,'',copy.deepcopy(context))
             if resp_c != '':
+                self.boring_count = 0  # reset bored count to 0
                 return resp_c,context_c
-        else:
-            self.boring_count += 1
 
         outputs = []
         origin_context = copy.deepcopy(context)
@@ -99,8 +100,8 @@ class ModelSelection(object):
         origin_context = copy.deepcopy(context)
         resp3,cont3 = self.de_model_reddit.get_response(chat_id, text, origin_context, self.article_text[chat_id])
         outputs.append((resp3,cont3))
-        origin_context = copy.deepcopy(context)
         if '?' not in text:
+            origin_context = copy.deepcopy(context)
             resp4,cont4 = self.qa_hred.get_response(chat_id, text, origin_context, self.article_text.get(chat_id,''))
             outputs.append((resp4,cont4))
 
@@ -109,3 +110,4 @@ class ModelSelection(object):
         ch = random.choice(range(len(outputs)))
 
         return outputs[ch]
+
