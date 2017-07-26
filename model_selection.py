@@ -17,8 +17,6 @@ BORED_COUNT = 2
 class ModelSelection(object):
 
     def __init__(self):
-        self.hred_model_twitter = None
-        self.hred_model_reddit = None
         self.article_text = {}
         self.candidate_model = {}
         self.article_nouns = {}
@@ -52,14 +50,10 @@ class ModelSelection(object):
             self._get_nouns(chat_id)
             self.candidate_model[chat_id] = CandidateQuestions_Wrapper('',self.article_text[chat_id],
                     conf.candidate['dict_file'],'candidate_question')
-            # generate first response or not?
-            # with some randomness generate the first response or leave blank
-            if random.choice([True,False]):
-                #resp = 'Nice article, what is it about?'
-                resp,context = self.candidate_model[chat_id].get_response(chat_id,'',context)
-                #context.append('<first_speaker>' + resp + '</s>')
-            else:
-                resp = ''
+            # Always generate first response
+            #resp = 'Nice article, what is it about?'
+            resp,context = self.candidate_model[chat_id].get_response(chat_id,'',context)
+            #context.append('<first_speaker>' + resp + '</s>')
             return resp,context
         # chat selection logic
         # if text contains a question, do not respond with a question (followup)

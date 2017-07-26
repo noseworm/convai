@@ -38,11 +38,12 @@ class ConvAIRLLBot:
     def __init__(self):
         self.chat_id = None
         self.observation = None
-	self.ai = {}
-        self.context = {} # keep contexts here
+        self.ai = {}
+        # self.context = {} # keep contexts here -> NEVER USED: contexts saved in self.ai[chat_id]['context']
 
     def observe(self, m):
 	chat_id = m['message']['chat']['id']
+        new_chat = False
         if chat_id not in self.ai:
             if m['message']['text'].startswith('/start '):
                 self.ai[chat_id] = {}
@@ -50,6 +51,7 @@ class ConvAIRLLBot:
                 self.ai[chat_id]['observation'] = m['message']['text']
                 self.ai[chat_id]['context'] = collections.deque(maxlen=MAX_CONTEXT)
                 logging.info("Start new chat #%s" % self.chat_id)
+                new_chat = True
             else:
                 logging.info("chat not started yet. Ignore message")
 
@@ -60,9 +62,9 @@ class ConvAIRLLBot:
             else:
                 self.ai[chat_id]['observation'] = m['message']['text']
                 logging.info("Accept message as part of chat #%s" % chat_id)
-        return chat_id
+        return chat_id, new_chat
 
-    def act(self,chat_id,m):
+    def act(self, chat_id, new_chat, m):
         data = {}
         message = {
             'chat_id': chat_id
@@ -72,10 +74,10 @@ class ConvAIRLLBot:
 	   if m['message']['chat']['id'] == chat_id and m['message']['text'] == '/end':
 		logging.info("Decided to finish chat %s" % chat_id)
 		data['text'] = '/end'
-		data['evaluation'] = {
-			'quality': 0,
-			'breadth': 0,
-			'engagement': 0
+		data['evaluation'] = {  # let's have the best default value haha
+			'quality': 5,
+			'breadth': 5,
+			'engagement': 5
 	    	}
 		message['text'] = json.dumps(data)
 		return message
@@ -87,9 +89,12 @@ class ConvAIRLLBot:
             logging.info("No new messages for chat #%s. Do not act." % self.chat_id)
             return
 
-        # select from our models here
-        text,context = mSelect.get_response(chat_id,self.ai[chat_id]['observation'],self.ai[chat_id]['context'])
-        self.ai[chat_id]['context'] = context
+        if new_chat:
+            text = "Hello! I hope you're doing well. I am doing fantastic today! Let me go through the article real quick and we will start talking about it."
+        else:
+            # select from our models
+            text, context = mSelect.get_response(chat_id,self.ai[chat_id]['observation'],self.ai[chat_id]['context'])
+            self.ai[chat_id]['context'] = context
         #texts = ['I love you!', 'Wow!', 'Really?', 'Nice!', 'Hi', 'Hello', '', '/end']
         #text = texts[random.randint(0, 7)]
 
@@ -121,7 +126,7 @@ def main():
 
     bot = ConvAIRLLBot()
     print "loading models"
-    mSelect.initialize_models()
+    mSelect.initialize_models()  # should we start this in a new thread instead..?
 
     while True:
         try:
@@ -135,18 +140,21 @@ def main():
 
             logging.info("Got %s new messages" % len(res.json()))
             for m in res.json():
-                logging.info("Process message %s" % m)
-                chat_id = bot.observe(m) # return chat_id here
-                new_message = bot.act(chat_id,m) # pass chat_id to act
-                if new_message is not None:
-		    print new_message
-                    logging.info("Send response to server.")
-                    res = requests.post(os.path.join(BOT_URL, 'sendMessage'),
-                                        json=new_message,
-                                        headers={'Content-Type': 'application/json'})
-                    if res.status_code != 200:
-                        logging.info(res.text)
-                        res.raise_for_status()
+                new_chat = True
+                while new_chat:  # will become false once we call bot.observe(m) except the first time we talk to this person
+                    logging.info("Process message %s" % m)
+                    chat_id, new_chat = bot.observe(m) # return chat_id & if we started a new convo or not
+                    new_message = bot.act(chat_id, new_chat, m) # pass chat_id, new_chat flag & message to act
+                    if new_message is not None:
+                        print new_message
+                        logging.info("Send response to server.")
+                        res = requests.post(os.path.join(BOT_URL, 'sendMessage'),
+                                            json=new_message,
+                                            headers={'Content-Type': 'application/json'})
+                        if res.status_code != 200:
+                            logging.info(res.text)
+                            res.raise_for_status()
+
             logging.info("Sleep for 1 sec. before new try")
         except Exception as e:
             logging.error(e)
