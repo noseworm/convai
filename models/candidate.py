@@ -32,8 +32,8 @@ class CandidateQuestions(object):
         self.entity_distribution = {} # distribution of spacy entities
         for ent in set(self.entities):
             self.token_distribution[ent.text] = (self.entities_str.count(ent.text) * 1.0) / len(self.entities)
-            self.entity_distribution[ent.ent_type_] = (len([p for p in self.entities
-                if p.ent_type_ == ent.ent_type_])*1.0) / len(self.entities)
+            self.entity_distribution[ent.label_] = (len([p for p in self.entities
+                if p.label_ == ent.label_])*1.0) / len(self.entities)
 
         # reverse sort the distribution dict
         self.token_distribution = sorted(self.token_distribution.items(), key=operator.itemgetter(1))
@@ -44,14 +44,11 @@ class CandidateQuestions(object):
     def _get_entities(self):
         self.line2token = {} # dictionary containing which tokens correspond to which line
         self.neighbors = {}
-        for i,sent in enumerate(self.doc.sents):
-            self.line2token[i] = []
-            for token in sent:
-                if token.ent_type_ != '':
-                    self.entities.append(token)
-                    self.entities_str.append(token.text)
-                    self.line2token[i].append(token)
-
+	ents = self.doc.ents
+	for ent in ents:
+            self.entities.append(ent)
+            self.entities_str.append(ent.text)
+    
     # get the spacy token given string
     def _get_entity(self,token_str):
         # multiple tokens are present having same text but different ent_type_
@@ -64,10 +61,11 @@ class CandidateQuestions(object):
     def get_response(self):
         # select randomly among top_n entities as per distribution
         token = self._get_entity(random.choice(self.token_distribution[:self.top_n])[0])
+        logger.info(token)
         # get the ent_type_ and sample a line to use
         response = ''
-        if token.ent_type_.lower() in self.entity2line:
-            line = self.dataset[random.choice(self.entity2line[token.ent_type_.lower()])]
+        if token.label_.lower() in self.entity2line:
+            line = self.dataset[random.choice(self.entity2line[token.label_.lower()])]
             response = re.sub('<(.*?)>',token.text,line)
         if response in self.done_responses:
             response = ''
