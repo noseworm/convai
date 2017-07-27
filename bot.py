@@ -122,7 +122,7 @@ def main():
     if BOT_ID is None:
         raise Exception('You should enter your bot token/id!')
 
-    BOT_URL = os.path.join('https://ipavlov.mipt.ru/nipsrouter/', BOT_ID)
+    BOT_URL = os.path.join(conf.bot_endpoint, BOT_ID)
 
     bot = ConvAIRLLBot()
     print "loading models"
