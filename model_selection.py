@@ -57,6 +57,7 @@ class ModelSelection(object):
             self._get_nouns(chat_id)
             self.candidate_model[chat_id] = CandidateQuestions_Wrapper('', self.article_text[chat_id],
                                                                        conf.candidate['dict_file'], 'candidate_question')
+            self.boring_count[chat_id] = 0  # initialize bored count to 0 for this new chat
             # Always generate first response
             #resp = 'Nice article, what is it about?'
             # add a small delay
@@ -86,10 +87,7 @@ class ModelSelection(object):
 
         # if text contains 2 words or less, add 1 to the bored count
         if len(text.strip().split()) <= 2:
-            if chat_id in self.boring_count:
-                self.boring_count[chat_id] += 1
-            else:
-                self.boring_count[chat_id] = 1
+            self.boring_count[chat_id] += 1
         # if user is bored, change the topic by asking a question (only if that question is not asked before)
         if self.boring_count[chat_id] >= BORED_COUNT:
             resp_c,context_c = self.candidate_model[chat_id].get_response(chat_id,'',copy.deepcopy(context))
