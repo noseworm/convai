@@ -33,17 +33,23 @@ MAX_CONTEXT = 3
 
 mSelect = model_selection.ModelSelection()
 
+
+class ChatState:
+    START = 0     # when we received `/start`
+    END = 1       # when we received `/end`
+    CHATTING = 2  # all other times
+
+
 class ConvAIRLLBot:
 
     def __init__(self):
         self.chat_id = None
         self.observation = None
         self.ai = {}
-        # self.context = {} # keep contexts here -> NEVER USED: contexts saved in self.ai[chat_id]['context']
 
     def observe(self, m):
 	chat_id = m['message']['chat']['id']
-        new_chat = False
+        state = ChatState.CHATTING  # default state
         if chat_id not in self.ai:
             if m['message']['text'].startswith('/start '):
                 self.ai[chat_id] = {}
@@ -51,20 +57,22 @@ class ConvAIRLLBot:
                 self.ai[chat_id]['observation'] = m['message']['text']
                 self.ai[chat_id]['context'] = collections.deque(maxlen=MAX_CONTEXT)
                 logging.info("Start new chat #%s" % self.chat_id)
-                new_chat = True
+                state = ChatState.START  # we started a new dialogue
             else:
                 logging.info("chat not started yet. Ignore message")
 
         else:
 	    if m['message']['text'] == '/end':
                 logging.info("End chat #%s" % chat_id)
+                mSelect.clean(chat_id)  # remove mSelect data for this chat id
                 del self.ai[chat_id]
+                state = ChatState.END  # we finished a dialogue
             else:
                 self.ai[chat_id]['observation'] = m['message']['text']
                 logging.info("Accept message as part of chat #%s" % chat_id)
-        return chat_id, new_chat
+        return chat_id, state
 
-    def act(self, chat_id, new_chat, m):
+    def act(self, chat_id, state,  m):
         data = {}
         message = {
             'chat_id': chat_id
@@ -89,7 +97,7 @@ class ConvAIRLLBot:
             logging.info("No new messages for chat #%s. Do not act." % self.chat_id)
             return
 
-        if new_chat:
+        if state == ChatState.START:
             text = "Hello! I hope you're doing well. I am doing fantastic today! Let me go through the article real quick and we will start talking about it."
         else:
             # select from our models
@@ -140,11 +148,11 @@ def main():
 
             logging.info("Got %s new messages" % len(res.json()))
             for m in res.json():
-                new_chat = True
-                while new_chat:  # will become false once we call bot.observe(m) except the first time we talk to this person
+                state = ChatState.START  # assume new chat all the time
+                while state == ChatState.START:  # will become false when we call bot.observe(m), except when it's really a new chat
                     logging.info("Process message %s" % m)
-                    chat_id, new_chat = bot.observe(m) # return chat_id & if we started a new convo or not
-                    new_message = bot.act(chat_id, new_chat, m) # pass chat_id, new_chat flag & message to act
+                    chat_id, state = bot.observe(m) # return chat_id & the dialogue state
+                    new_message = bot.act(chat_id, state, m) # pass chat_id, dialogue state & message to act upon
                     if new_message is not None:
                         print new_message
                         logging.info("Send response to server.")

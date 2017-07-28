@@ -18,10 +18,10 @@ BORED_COUNT = 2
 class ModelSelection(object):
 
     def __init__(self):
-        self.article_text = {}
-        self.candidate_model = {}
-        self.article_nouns = {}
-        self.boring_count = 0 # whenever user responds with single word text, we assume that they are bored. if counter hits = BORED_COUNT, ask a question
+        self.article_text = {}     # map from chat_id to article text
+        self.candidate_model = {}  # map from chat_id to a simple model for the article
+        self.article_nouns = {}    # map from chat_id to a list of nouns in the article
+        self.boring_count = {}     # number of times the user responded with short answer
 
     def initialize_models(self):
         self.hred_model_twitter = HRED_Wrapper(conf.hred['twitter_model_prefix'], conf.hred['twitter_dict_file'], 'hred-twitter')
@@ -35,27 +35,33 @@ class ModelSelection(object):
         r,_ = self.hred_model_reddit.get_response(1, 'test statement', [])
         r,_ = self.de_model_reddit.get_response(1, 'test statement', [])
         r,_ = self.qa_hred.get_response(1, 'test statement', [])
-        r,_ = self.drqa.get_response(1,'Where is Daniel?',[],'Daniel went to the kitchen')
+        r,_ = self.drqa.get_response(1, 'Where is Daniel?', [], 'Daniel went to the kitchen')
+
+    def clean(self, chat_id):
+        del self.article_text[chat_id]
+        del self.candidate_model[chat_id]
+        del self.article_nouns[chat_id]
+        del self.boring_count[chat_id]
 
     # get all the nouns from the text
-    def _get_nouns(self,chat_id):
+    def _get_nouns(self, chat_id):
         self.article_nouns[chat_id] = [p.text for p in self.article_text[chat_id] if p.pos_ == 'NOUN']
         print self.article_nouns[chat_id]
 
-    def get_response(self,chat_id,text,context):
+    def get_response(self, chat_id, text, context):
         # if text containes /start, dont add it to the context
         if '/start' in text:
             # save the article for later use
             text = re.sub('\\start','',text)
             self.article_text[chat_id] = nlp(unicode(text))
             self._get_nouns(chat_id)
-            self.candidate_model[chat_id] = CandidateQuestions_Wrapper('',self.article_text[chat_id],
-                    conf.candidate['dict_file'],'candidate_question')
+            self.candidate_model[chat_id] = CandidateQuestions_Wrapper('', self.article_text[chat_id],
+                                                                       conf.candidate['dict_file'], 'candidate_question')
             # Always generate first response
             #resp = 'Nice article, what is it about?'
             # add a small delay
             time.sleep(2)
-            resp,context = self.candidate_model[chat_id].get_response(chat_id,'',context)
+            resp, context = self.candidate_model[chat_id].get_response(chat_id, '', context)
             #context.append('<first_speaker>' + resp + '</s>')
             return resp,context
         # chat selection logic
@@ -78,13 +84,17 @@ class ModelSelection(object):
 		   resp,context = self.drqa.get_response(chat_id,text,context,article=self.article_text[chat_id].text)
 		   return resp,context
 
-        # if text contains 2 words or less, and it has happened before (twice), change the topic, ask a question (only if that question is not asked before)
+        # if text contains 2 words or less, add 1 to the bored count
         if len(text.strip().split()) <= 2:
-            self.boring_count += 1
-        if self.boring_count >= BORED_COUNT:
+            if chat_id in self.boring_count:
+                self.boring_count[chat_id] += 1
+            else:
+                self.boring_count[chat_id] = 1
+        # if user is bored, change the topic by asking a question (only if that question is not asked before)
+        if self.boring_count[chat_id] >= BORED_COUNT:
             resp_c,context_c = self.candidate_model[chat_id].get_response(chat_id,'',copy.deepcopy(context))
             if resp_c != '':
-                self.boring_count = 0  # reset bored count to 0
+                self.boring_count[chat_id] = 0  # reset bored count to 0
                 return resp_c,context_c
 
         outputs = []
