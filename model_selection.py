@@ -51,7 +51,7 @@ class ModelSelection(object):
 
     def strip_emojis(self,str):
         tokens = set(list(str))
-        emojis = list(tokens.intersection(set(emoji.UNICODE_EMOJI)))
+        emojis = list(tokens.intersection(set(emoji.UNICODE_EMOJI.keys())))
         if len(emojis) > 0:
             text = ''.join(c for c in str if c not in emojis)
             emojis = ''.join(emojis)
@@ -73,7 +73,9 @@ class ModelSelection(object):
             # add a small delay
             time.sleep(2)
             resp, context = self.candidate_model[chat_id].get_response(chat_id, '', context)
-            #context.append('<first_speaker>' + resp + '</s>')
+            if resp == '':
+                resp = random.choice(["That's a short article, don't you think? Not sure what's it about.","Apparently I am too dumb for this article. What's it about?"])
+                context.append('<first_speaker>' + resp + '</s>')
             return resp,context
         # chat selection logic
         # if text contains emoji's, strip them

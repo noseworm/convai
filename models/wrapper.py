@@ -277,6 +277,7 @@ class CandidateQuestions_Wrapper(Model_Wrapper):
         logger.info('------------------------------------')
         logger.info('Generating candidate question for user %s.' % user_id)
         text = self._format_to_model(text, len(context))
+        logger.info(text)
         context.append(text)
 
         response = self.model.get_response()

@@ -111,7 +111,7 @@ class ConvAIRLLBot:
         if text == '':
             logging.info("Decided to respond with random emoji")
             data = {
-                 'text':random.choice(emoji.UNICODE_EMOJI),
+                 'text':random.choice(emoji.UNICODE_EMOJI.keys()),
                  'evaluation':0
             }
         else:
@@ -144,14 +144,14 @@ def main():
     while True:
         try:
             time.sleep(1)
-            logging.info("Get updates from server")
+            logging.debug("Get updates from server")
             res = requests.get(os.path.join(BOT_URL, 'getUpdates'))
 
             if res.status_code != 200:
                 logging.info(res.text)
                 res.raise_for_status()
 
-            logging.info("Got %s new messages" % len(res.json()))
+            logging.debug("Got %s new messages" % len(res.json()))
             for m in res.json():
                 state = ChatState.START  # assume new chat all the time
                 while state == ChatState.START:  # will become false when we call bot.observe(m), except when it's really a new chat
@@ -168,7 +168,7 @@ def main():
                             logging.info(res.text)
                             res.raise_for_status()
 
-            logging.info("Sleep for 1 sec. before new try")
+            logging.debug("Sleep for 1 sec. before new try")
         except Exception as e:
             logging.error(e)
 
