@@ -23,6 +23,8 @@ import collections
 import model_selection
 import config
 conf = config.get_config()
+import random
+import emoji
 import logging
 logging.basicConfig(
     level=logging.INFO,
@@ -107,8 +109,11 @@ class ConvAIRLLBot:
         #text = texts[random.randint(0, 7)]
 
         if text == '':
-            logging.info("Decided to do not respond and wait for new message")
-            return
+            logging.info("Decided to respond with random emoji")
+            data = {
+                 'text':random.choice(emoji.UNICODE_EMOJI),
+                 'evaluation':0
+            }
         else:
             logging.info("Decided to respond with text: %s" % text)
             data = {

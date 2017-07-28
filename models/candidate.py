@@ -3,6 +3,7 @@ import re
 import operator
 import random
 import logging
+import codecs
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +18,7 @@ class CandidateQuestions(object):
         self.dataset = []
         self.entity2line = {} # dictionary containing a list of indices of the sentences
         ct = 0
-        with open(dataset_file,'r') as fp:
+        with codecs.open(dataset_file,'r',encoding='utf-8') as fp:
             for line in fp:
                 self.dataset.append(line)
                 ents = re.findall('<(.*?)>',line,re.DOTALL)
@@ -66,6 +67,7 @@ class CandidateQuestions(object):
         response = ''
         if token.label_.lower() in self.entity2line:
             line = self.dataset[random.choice(self.entity2line[token.label_.lower()])]
+            logging.info("Choosing line : " + line)
             response = re.sub('<(.*?)>',token.text,line)
         if response in self.done_responses:
             response = ''

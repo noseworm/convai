@@ -9,6 +9,7 @@ import copy
 import spacy
 import re
 import time
+import emoji
 
 nlp = spacy.load('en')
 
@@ -48,6 +49,15 @@ class ModelSelection(object):
         self.article_nouns[chat_id] = [p.text for p in self.article_text[chat_id] if p.pos_ == 'NOUN']
         print self.article_nouns[chat_id]
 
+    def strip_emojis(self,str):
+        tokens = set(str.split())
+        emojis = list(tokens.intersection(set(emoji.UNICODE_EMOJI)))
+        if len(emojis) > 0:
+            text = ''.join(c for c in str if c not in emojis)
+            emojis = ''.join(emojis)
+            return text,emojis
+        return str,None
+
     def get_response(self, chat_id, text, context):
         # if text containes /start, dont add it to the context
         if '/start' in text:
@@ -72,6 +82,13 @@ class ModelSelection(object):
             resp,context = self.dumb_qa.get_response(chat_id,text,context)
             return resp,context
 
+        # if text contains emoji's, strip them
+        text,emojis = self.strip_emojis(text)
+        if emojis and len(text.strip()) < 1:
+            # give back the emoji itself
+            return emojis,context
+        
+        # if text does not contain anything else
         # if text contains question, run DRQA
         if '?' in text:
 	    # if there is a common noun between text and article, run drqa
