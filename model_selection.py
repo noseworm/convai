@@ -50,7 +50,7 @@ class ModelSelection(object):
         print self.article_nouns[chat_id]
 
     def strip_emojis(self,str):
-        tokens = set(str.split())
+        tokens = set(list(str))
         emojis = list(tokens.intersection(set(emoji.UNICODE_EMOJI)))
         if len(emojis) > 0:
             text = ''.join(c for c in str if c not in emojis)
@@ -76,18 +76,18 @@ class ModelSelection(object):
             #context.append('<first_speaker>' + resp + '</s>')
             return resp,context
         # chat selection logic
-        # if text contains a question, do not respond with a question (followup)
-        # if query falls under dumb questions, respond appropriately
-        if self.dumb_qa.isMatch(text):
-            resp,context = self.dumb_qa.get_response(chat_id,text,context)
-            return resp,context
-
         # if text contains emoji's, strip them
         text,emojis = self.strip_emojis(text)
         if emojis and len(text.strip()) < 1:
             # give back the emoji itself
             return emojis,context
-        
+ 
+        # if text contains a question, do not respond with a question (followup)
+        # if query falls under dumb questions, respond appropriately
+        if self.dumb_qa.isMatch(text):
+            resp,context = self.dumb_qa.get_response(chat_id,text,context)
+            return resp,context
+       
         # if text does not contain anything else
         # if text contains question, run DRQA
         if '?' in text:
