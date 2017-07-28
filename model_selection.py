@@ -8,6 +8,7 @@ import random
 import copy
 import spacy
 import re
+import time
 
 nlp = spacy.load('en')
 
@@ -52,6 +53,8 @@ class ModelSelection(object):
                     conf.candidate['dict_file'],'candidate_question')
             # Always generate first response
             #resp = 'Nice article, what is it about?'
+            # add a small delay
+            time.sleep(2)
             resp,context = self.candidate_model[chat_id].get_response(chat_id,'',context)
             #context.append('<first_speaker>' + resp + '</s>')
             return resp,context
@@ -85,23 +88,24 @@ class ModelSelection(object):
                 return resp_c,context_c
 
         outputs = []
-        origin_context = copy.deepcopy(context)
-        resp1,cont1 = self.hred_model_twitter.get_response(chat_id, text, origin_context, self.article_text.get(chat_id,''))
-        outputs.append((resp1,cont1))
-        origin_context = copy.deepcopy(context)
-        resp2,cont2 = self.hred_model_reddit.get_response(chat_id, text, origin_context, self.article_text.get(chat_id,''))
-        outputs.append((resp2,cont2))
-        origin_context = copy.deepcopy(context)
-        resp3,cont3 = self.de_model_reddit.get_response(chat_id, text, origin_context, self.article_text[chat_id])
-        outputs.append((resp3,cont3))
+        # randomly decide a model to generate. now we change the selection so that we pre-select the model to generate before hand.
+        models = ['hred-twitter','hred-reddit','de']
         if '?' not in text:
-            origin_context = copy.deepcopy(context)
-            resp4,cont4 = self.qa_hred.get_response(chat_id, text, origin_context, self.article_text.get(chat_id,''))
-            outputs.append((resp4,cont4))
+           models.append('qa')
+        chosen_model = random.choice(models)
+        origin_context = copy.deepcopy(context)
+        if chosen_model == 'hred-twitter':
+            resp,cont = self.hred_model_twitter.get_response(chat_id, text, origin_context, self.article_text.get(chat_id,''))
+        if chosen_model == 'hred-reddit':
+            resp,cont = self.hred_model_reddit.get_response(chat_id, text, origin_context, self.article_text.get(chat_id,''))
+        if chosen_model == 'de':
+            resp,cont = self.de_model_reddit.get_response(chat_id, text, origin_context, self.article_text[chat_id])
+        if chosen_model == 'qa':
+            resp,cont = self.qa_hred.get_response(chat_id, text, origin_context, self.article_text.get(chat_id,''))
 
         # chat selection logic
         # for now, select in random
-        ch = random.choice(range(len(outputs)))
+        # ch = random.choice(range(len(outputs)))
 
-        return outputs[ch]
+        return resp,cont
 
