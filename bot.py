@@ -50,8 +50,9 @@ class ConvAIRLLBot:
         self.ai = {}
 
     def observe(self, m):
-	chat_id = m['message']['chat']['id']
+        chat_id = m['message']['chat']['id']
         state = ChatState.CHATTING  # default state
+        # New chat:
         if chat_id not in self.ai:
             if m['message']['text'].startswith('/start '):
                 self.ai[chat_id] = {}
@@ -62,13 +63,15 @@ class ConvAIRLLBot:
                 state = ChatState.START  # we started a new dialogue
             else:
                 logging.info("chat not started yet. Ignore message")
-
+        # Not a new chat:
         else:
-	    if m['message']['text'] == '/end':
+            # Finished chat
+            if m['message']['text'] == '/end':
                 logging.info("End chat #%s" % chat_id)
                 mSelect.clean(chat_id)  # remove mSelect data for this chat id
                 del self.ai[chat_id]
                 state = ChatState.END  # we finished a dialogue
+            # Continue chat
             else:
                 self.ai[chat_id]['observation'] = m['message']['text']
                 logging.info("Accept message as part of chat #%s" % chat_id)
@@ -81,18 +84,19 @@ class ConvAIRLLBot:
         }
 
         if chat_id not in self.ai:
-	   if m['message']['chat']['id'] == chat_id and m['message']['text'] == '/end':
-		logging.info("Decided to finish chat %s" % chat_id)
-		data['text'] = '/end'
-		data['evaluation'] = {  # let's have the best default value haha
-			'quality': 5,
-			'breadth': 5,
-			'engagement': 5
-	    	}
-		message['text'] = json.dumps(data)
-		return message
-	   else:
-		logging.info("Dialog not started yet. Do not act.")
+            # Finish chat:
+            if m['message']['chat']['id'] == chat_id and m['message']['text'] == '/end':
+                logging.info("Decided to finish chat %s" % chat_id)
+                data['text'] = '/end'
+                data['evaluation'] = {  # let's have the best default value haha
+                    'quality': 5,
+                    'breadth': 5,
+                    'engagement': 5
+                }
+                message['text'] = json.dumps(data)
+                return message
+            else:
+                logging.info("Dialog not started yet. Do not act.")
                 return
 
         if self.ai[chat_id]['observation'] is None:
@@ -103,7 +107,7 @@ class ConvAIRLLBot:
             text = "Hello! I hope you're doing well. I am doing fantastic today! Let me go through the article real quick and we will start talking about it."
         else:
             # select from our models
-            text, context = mSelect.get_response(chat_id,self.ai[chat_id]['observation'],self.ai[chat_id]['context'])
+            text, context = mSelect.get_response(chat_id, self.ai[chat_id]['observation'], self.ai[chat_id]['context'])
             self.ai[chat_id]['context'] = context
         #texts = ['I love you!', 'Wow!', 'Really?', 'Nice!', 'Hi', 'Hello', '', '/end']
         #text = texts[random.randint(0, 7)]
@@ -112,13 +116,13 @@ class ConvAIRLLBot:
             logging.info("Decided to respond with random emoji")
             data = {
                  'text':random.choice(emoji.UNICODE_EMOJI.keys()),
-                 'evaluation':0
+                 'evaluation': 0  # 0=nothing, 1=thumbs down, 2=thumbs up
             }
         else:
             logging.info("Decided to respond with text: %s" % text)
             data = {
                 'text': text,
-                'evaluation': 0
+                'evaluation': 0  # 0=nothing, 1=thumbs down, 2=thumbs up
             }
 
         message['text'] = json.dumps(data)
@@ -127,10 +131,7 @@ class ConvAIRLLBot:
 
 def main():
 
-    """
-    !!!!!!! Put your bot id here !!!!!!!
-    """
-    BOT_ID = conf.bot_token
+    BOT_ID = conf.bot_token  # !!!!!!! Put your bot id here !!!!!!!
 
     if BOT_ID is None:
         raise Exception('You should enter your bot token/id!')
