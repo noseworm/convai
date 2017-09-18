@@ -2,6 +2,10 @@
 
 This repository contains the Dockerfile and setup code to run chat bot in docker instance.
 
+## Live Deployment
+
+Telegram bot **@conv_test**. Make sure to have an username registered in Telegram, and then start conversation with `\begin`.
+
 ## File description
 
 - **bot.py** : Main entry point of the chat bot, message selection logic can be implemented here.
