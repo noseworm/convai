@@ -105,6 +105,8 @@ class ConvAIRLLBot:
                          self.chat_id)
             return
 
+        model_name = 'none'
+        policyID = -1
         if state == ChatState.START:
             text = "Hello! I hope you're doing well. I am doing fantastic today! Let me go through the article real quick and we will start talking about it."
         else:
@@ -122,7 +124,8 @@ class ConvAIRLLBot:
                 'evaluation': 0  # 0=nothing, 1=thumbs down, 2=thumbs up
             }
         else:
-            logging.info("Decided to respond with text: %s, model name %s, policyID %d" % (text, model_name, policyID))
+            logging.info("Decided to respond with text: %s, model name %s, policyID %d" % (
+                text, model_name, policyID))
             data = {
                 'text': text,
                 'evaluation': 0,  # 0=nothing, 1=thumbs down, 2=thumbs up
