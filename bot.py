@@ -58,7 +58,8 @@ class ConvAIRLLBot:
                 self.ai[chat_id] = {}
                 self.ai[chat_id]['chat_id'] = chat_id
                 self.ai[chat_id]['observation'] = m['message']['text']
-                self.ai[chat_id]['context'] = collections.deque(maxlen=MAX_CONTEXT)
+                self.ai[chat_id]['context'] = collections.deque(
+                    maxlen=MAX_CONTEXT)
                 logging.info("Start new chat #%s" % self.chat_id)
                 state = ChatState.START  # we started a new dialogue
             else:
@@ -100,14 +101,16 @@ class ConvAIRLLBot:
                 return
 
         if self.ai[chat_id]['observation'] is None:
-            logging.info("No new messages for chat #%s. Do not act." % self.chat_id)
+            logging.info("No new messages for chat #%s. Do not act." %
+                         self.chat_id)
             return
 
         if state == ChatState.START:
             text = "Hello! I hope you're doing well. I am doing fantastic today! Let me go through the article real quick and we will start talking about it."
         else:
             # select from our models
-            text, context = mSelect.get_response(chat_id, self.ai[chat_id]['observation'], self.ai[chat_id]['context'])
+            (text, context, model_name), policyID = mSelect.get_response(
+                chat_id, self.ai[chat_id]['observation'], self.ai[chat_id]['context'])
             self.ai[chat_id]['context'] = context
         #texts = ['I love you!', 'Wow!', 'Really?', 'Nice!', 'Hi', 'Hello', '', '/end']
         #text = texts[random.randint(0, 7)]
@@ -115,14 +118,16 @@ class ConvAIRLLBot:
         if text == '':
             logging.info("Decided to respond with random emoji")
             data = {
-                 'text':random.choice(emoji.UNICODE_EMOJI.keys()),
-                 'evaluation': 0  # 0=nothing, 1=thumbs down, 2=thumbs up
+                'text': random.choice(emoji.UNICODE_EMOJI.keys()),
+                'evaluation': 0  # 0=nothing, 1=thumbs down, 2=thumbs up
             }
         else:
-            logging.info("Decided to respond with text: %s" % text)
+            logging.info("Decided to respond with text: %s, model name %s, policyID %d" % (text, model_name, policyID))
             data = {
                 'text': text,
-                'evaluation': 0  # 0=nothing, 1=thumbs down, 2=thumbs up
+                'evaluation': 0,  # 0=nothing, 1=thumbs down, 2=thumbs up
+                'model_name': model_name,
+                'policyID': policyID
             }
 
         message['text'] = json.dumps(data)
@@ -155,10 +160,13 @@ def main():
             logging.debug("Got %s new messages" % len(res.json()))
             for m in res.json():
                 state = ChatState.START  # assume new chat all the time
-                while state == ChatState.START:  # will become false when we call bot.observe(m), except when it's really a new chat
+                # will become false when we call bot.observe(m), except when it's really a new chat
+                while state == ChatState.START:
                     logging.info("Process message %s" % m)
-                    chat_id, state = bot.observe(m) # return chat_id & the dialogue state
-                    new_message = bot.act(chat_id, state, m) # pass chat_id, dialogue state & message to act upon
+                    # return chat_id & the dialogue state
+                    chat_id, state = bot.observe(m)
+                    # pass chat_id, dialogue state & message to act upon
+                    new_message = bot.act(chat_id, state, m)
                     if new_message is not None:
                         print new_message
                         logging.info("Send response to server.")
