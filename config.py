@@ -9,7 +9,8 @@ class dotdict(dict):
 config_data = {
         'test_bot_token':'355748420:AAEpaGukZEeC1jFwvVU2TVf3d92fgq6VrKU',
         'bot_token':'5319E57A-F165-4BEC-94E6-413C38B4ACF9',
-        'bot_endpoint':'https://ipavlov.mipt.ru/nipsrouter/',
+        'bot_endpoint_backup':'https://ipavlov.mipt.ru/nipsrouter-alt/',
+        'bot_endpoint':'https://koustuv.me/',
         # data endpoints
         # add your model endpoints here
         'data_base':'/root/convai/',
