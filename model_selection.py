@@ -109,18 +109,18 @@ class ModelSelection(object):
                 resp = random.choice(["That's a short article, don't you think? Not sure what's it about.",
                                       "Apparently I am too dumb for this article. What's it about?"])
                 context.append('<first_speaker>' + resp + '</s>')
-            return resp, context
+            return (resp, context, 'starter'),-1
 
         # if text contains emoji's, strip them
         text, emojis = self.strip_emojis(text)
         if emojis and len(text.strip()) < 1:
             # if text had only emoji, give back the emoji itself
-            return emojis, context
+            return (emojis, context, 'emoji'),-1
 
         # if query falls under dumb questions, respond appropriately
         if self.dumb_qa.isMatch(text):
             resp, context = self.dumb_qa.get_response(chat_id, text, context)
-            return resp, context
+            return (resp, context, 'dumb qa'),-1
 
         ###
         # chat selection logic
@@ -141,7 +141,7 @@ class ModelSelection(object):
             return self.de_drqa_policy(chat_id, text, context), Policy.DE_DRQA
         else:
             print "ERROR: unknown policy mode:", self.policy_mode
-            return None, None, None
+            return (None, None, None), None
 
     def optimal_policy(self, chat_id, text, context):
         # if text contains question,
@@ -154,7 +154,7 @@ class ModelSelection(object):
             if len(common) > 0:
                 resp, context = self.drqa.get_response(
                     chat_id, text, context, article=self.article_text[chat_id].text)
-                return resp, context
+                return resp, context, 'drqa'
 
         # if text contains 2 words or less, add 1 to the bored count
         if len(text.strip().split()) <= 2:
@@ -165,7 +165,7 @@ class ModelSelection(object):
                 chat_id, '', copy.deepcopy(context))
             if resp_c != '':
                 self.boring_count[chat_id] = 0  # reset bored count to 0
-                return resp_c, context_c
+                return resp_c, context_c, 'bored'
 
         # randomly decide a model to query to get a response:
         models = ['hred-twitter', 'hred-reddit', 'de']
