@@ -25,6 +25,7 @@ import config
 conf = config.get_config()
 import random
 import emoji
+import storage
 import logging
 logging.basicConfig(
     level=logging.INFO,
@@ -33,6 +34,7 @@ logging.basicConfig(
 
 MAX_CONTEXT = 3
 
+chat_history = {}
 mSelect = model_selection.ModelSelection()
 
 
@@ -62,6 +64,7 @@ class ConvAIRLLBot:
                     maxlen=MAX_CONTEXT)
                 logging.info("Start new chat #%s" % self.chat_id)
                 state = ChatState.START  # we started a new dialogue
+                chat_history[chat_id] = []
             else:
                 logging.info("chat not started yet. Ignore message")
         # Not a new chat:
@@ -76,6 +79,8 @@ class ConvAIRLLBot:
             else:
                 self.ai[chat_id]['observation'] = m['message']['text']
                 logging.info("Accept message as part of chat #%s" % chat_id)
+                chat_history[chat_id].append(
+                    {'text': m['message']['text'], 'sender': human})
         return chat_id, state
 
     def act(self, chat_id, state,  m):
@@ -94,6 +99,8 @@ class ConvAIRLLBot:
                     'breadth': 5,
                     'engagement': 5
                 }
+                storage.store_data(chat_id, chat_history[chat_id])
+                del chat_history[chat_id]
                 message['text'] = json.dumps(data)
                 return message
             else:
@@ -134,6 +141,8 @@ class ConvAIRLLBot:
             }
 
         message['text'] = json.dumps(data)
+        data['sender'] = 'bot'
+        chat_history[chat_id].append(data)
         return message
 
 
