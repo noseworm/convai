@@ -13,7 +13,7 @@ dialogs = db.dialogs
 
 def store_data(dialog_id, dialog_history):
     print dialog_history
-    db_logs = dialogs.find({"dialogId": dialog_id})
+    db_logs = list(dialogs.find({"dialogId": dialog_id}))
     if len(db_logs) > 0:
         thread = db_logs[0]['thread']
         new_thread = []

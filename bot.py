@@ -79,8 +79,9 @@ class ConvAIRLLBot:
             else:
                 self.ai[chat_id]['observation'] = m['message']['text']
                 logging.info("Accept message as part of chat #%s" % chat_id)
-                chat_history[chat_id].append(
-                    {'text': m['message']['text'], 'sender': "human"})
+                if not m['message']['text'].startswith('/start'):
+                    chat_history[chat_id].append(
+                        {'text': m['message']['text'], 'sender': "human"})
         return chat_id, state
 
     def act(self, chat_id, state,  m):
