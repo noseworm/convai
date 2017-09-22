@@ -109,18 +109,18 @@ class ModelSelection(object):
                 resp = random.choice(["That's a short article, don't you think? Not sure what's it about.",
                                       "Apparently I am too dumb for this article. What's it about?"])
                 context.append('<first_speaker>' + resp + '</s>')
-            return (resp, context, 'starter'),-1
+            return (resp, context, 'starter'), Policy.NONE
 
         # if text contains emoji's, strip them
         text, emojis = self.strip_emojis(text)
         if emojis and len(text.strip()) < 1:
             # if text had only emoji, give back the emoji itself
-            return (emojis, context, 'emoji'),-1
+            return (emojis, context, 'emoji'), Policy.NONE
 
         # if query falls under dumb questions, respond appropriately
         if self.dumb_qa.isMatch(text):
             resp, context = self.dumb_qa.get_response(chat_id, text, context)
-            return (resp, context, 'dumb qa'),-1
+            return (resp, context, 'dumb qa'), Policy.NONE
 
         ###
         # chat selection logic

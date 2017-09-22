@@ -129,7 +129,9 @@ class ConvAIRLLBot:
             logging.info("Decided to respond with random emoji")
             data = {
                 'text': random.choice(emoji.UNICODE_EMOJI.keys()),
-                'evaluation': 0  # 0=nothing, 1=thumbs down, 2=thumbs up
+                'evaluation': 0,  # 0=nothing, 1=thumbs down, 2=thumbs up
+                'policyID': policyID,
+                'model_name': 'rand_emoji'
             }
         else:
             logging.info("Decided to respond with text: %s, model name %s, policyID %d" % (
