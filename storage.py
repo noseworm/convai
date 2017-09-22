@@ -4,15 +4,18 @@
 import pymongo
 
 MONGO_PORT = 8091
-client = pymongo.MongoClient("localhost", MONGO_PORT)
+client = pymongo.MongoClient("132.206.3.23", MONGO_PORT)
 db = client.convai
-dialogs = db.dialogs
+dialogs = db.local
 
 # stores the log history in the database by dialog id
 
 
 def store_data(dialog_id, dialog_history):
-    print dialog_history
+    dialogs.insert({'dialogId': dialog_id, 'logs': dialog_history })
+
+# Stub: will use it later
+def match_data():
     db_logs = list(dialogs.find({"dialogId": dialog_id}))
     if len(db_logs) > 0:
         thread = db_logs[0]['thread']
@@ -24,4 +27,4 @@ def store_data(dialog_id, dialog_history):
                 dl['policyID'] = dh['policyID']
                 dl['model_name'] = dl['model_name']
             new_thread.append(dl)
-        dialogs.find({"dialogId": dialog_id}, {'$set': {'thread': new_thread}})
+        dialogs.update({"dialogId": dialog_id}, {'$set': {'thread': new_thread}})
