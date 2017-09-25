@@ -92,7 +92,9 @@ class ModelSelection(object):
                 ALL_POLICIES)  # sample a random policy
 
             # save the article for later use
-            text = re.sub('\\start', '', text)
+            text = re.sub(r'/\start', '', text)
+            # remove urls
+            text = re.sub(r'^https?:\/\/.*[\r\n]*', '', text, flags=re.MULTILINE)
             self.article_text[chat_id] = nlp(unicode(text))
             self._get_nouns(chat_id)
             self.candidate_model[chat_id] = CandidateQuestions_Wrapper('', self.article_text[chat_id],

@@ -338,7 +338,7 @@ class DRQA_Wrapper(Model_Wrapper):
         context.append(ctext)
         response = ''
         try:
-            res = requests.post('http://localhost:8888/ask', json={'article':article,'question':text})
+            res = requests.post('http://localhost:8888/ask', json={'article':article.text,'question':text})
             res_data = res.json()
             response = res_data['reply']['text']
         except Exception as e:
