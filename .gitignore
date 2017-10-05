@@ -21,3 +21,5 @@ vendor/pkg/
 .idea
 *.pyc
 *.zip
+data/GoogleNews-vectors-negative300.bin
+data/cookies.txt
