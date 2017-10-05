@@ -1,3 +1,6 @@
+from gensim.models import KeyedVectors
+from nltk.corpus import stopwords
+import numpy as np
 
 """
 This file defines different hand-enginered features based
@@ -6,7 +9,15 @@ one candidate response.
 These features will then be used as input signals to a
 fully-connected feed-foward neural network to predict either
 the full dialogue score or the utterance score.
+
+continue adding features from https://docs.google.com/document/d/1PAVoHP_I39L6Rk1e8pIvq_wFW-_oyVa1qy1hjKC9E5M/edit
 """
+
+print "loading word2vec embeddings..."
+w2v = KeyedVectors.load_word2vec_format("../data/GoogleNews-vectors-negative300.bin", binary=True)
+
+print "loading nltk english stop words..."
+stop = set(stopwords.words('english'))
 
 
 def get(article, context, candidate, feature_list):
@@ -24,12 +35,12 @@ def get(article, context, candidate, feature_list):
     for f in feature_list:
         feature = eval(f)(article, context, candidate)
         feature_objects.append(feature)
-        
 
     if len(feature_objects) == 0:
         print "WARNING: no feature recognized in %s" % (feature_list,)
     
     return feature_objects
+    # To get raw features call "np.array([f.feat for f in feature_objects]).flatten()"
 
 
 class Feature(Object):
@@ -81,7 +92,52 @@ class UserLength(Feature):
             self.feat = float(len(context[-1]))
 
 
+class AverageWordEmbedding_Candidate(Feature):
+
+    def __init__(self, article=None, context=None, candidate=None):
+        # Constructor: call super class constructor with dim=300
+        super(UserLength, self).__init__(w2v.vector_size, article, context, candidate)
+        self.set(article, context, candidate)
+
+    def set(self, article, context, candidate):
+        """
+        set feature attribute to average word embedding (dim: 300) of the candidate response
+        """
+        if candidate = None:
+            self.feat = None
+        else:
+            X = np.zeros((self.dim,), dtype='float32')
+            for tok in candidate.strip().split(' '):
+                if tok in w2v:
+                    X += w2v[tok]
+            X = np.array(X)/np.linalg.norm(X)
+            self.feat = X
+
+
+class AverageWordEmbedding_User(Feature):
+
+    def __init__(self, article=None, context=None, candidate=None):
+        # Constructor: call super class constructor with dim=300
+        super(UserLength, self).__init__(w2v.vector_size, article, context, candidate)
+        self.set(article, context, candidate)
+
+    def set(self, article, context, candidate):
+        """
+        set feature attribute to average word embedding (dim: 300) of the last user turn
+        """
+        if context = None:
+            self.feat = None
+        else:
+            X = np.zeros((self.dim,), dtype='float32')
+            for tok in context[-1].strip().split(' '):
+                if tok in w2v:
+                    X += w2v[tok]
+            X = np.array(X)/np.linalg.norm(X)
+            self.feat = X
+
+
 # TODO: continue defining new features like embedding metrics, word overlap metrics, lookup for specific words, etc...
 # Make sure to explain new features very clearly and mention the number of dimensions it is (ie: the number of values it returns)
+# continue adding features from https://docs.google.com/document/d/1PAVoHP_I39L6Rk1e8pIvq_wFW-_oyVa1qy1hjKC9E5M/edit
 
 

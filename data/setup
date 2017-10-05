@@ -24,5 +24,34 @@ unzip "$de_reddit_data"
 wget "$location_base$followup_data"
 unzip "$followup_data"
 
-
 echo "-------Models downloaded-----------"
+
+
+
+echo "-------Downloading Word2Vec--------"
+
+OUTPUT=$( wget --save-cookies cookies.txt --keep-session-cookies --no-check-certificate 'https://docs.google.com/uc?export=download&id=0B7XkCwpI5KDYNlNUTTlSS21pQmM' -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/Code: \1\n/p' )
+CODE=${OUTPUT##*Code: }
+echo "code: $CODE"
+F='GoogleNews-vectors-negative300.bin.gz'
+if [ -z "$1" ]
+    then
+        OUT_F=$F
+    else
+        OUT_F=$1/$F
+fi
+echo "out_f: $OUT_F"
+wget --load-cookies cookies.txt 'https://docs.google.com/uc?export=download&confirm='$CODE'&id=0B7XkCwpI5KDYNlNUTTlSS21pQmM' -O $OUT_F
+echo "Unziping Word2Vec file..."
+gunzip $OUT_F
+
+echo "-------Word2Vec downloaded--------"
+
+
+
+echo "-------Downloading nltk corpora-------"
+python -c "import nltk; nltk.download('stopwords')"
+echo "-------nltk corpora downloaded--------"
+
+
+
