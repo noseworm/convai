@@ -86,7 +86,7 @@ class UserLength(Feature):
         """
         set feature attribute to float scalar (dim: 1) for the length of the previous user utterance
         """
-        if context = None:
+        if context is None:
             self.feat = None
         else:
             self.feat = float(len(context[-1]))
@@ -103,7 +103,7 @@ class AverageWordEmbedding_Candidate(Feature):
         """
         set feature attribute to average word embedding (dim: 300) of the candidate response
         """
-        if candidate = None:
+        if candidate is None:
             self.feat = None
         else:
             X = np.zeros((self.dim,), dtype='float32')
@@ -125,7 +125,7 @@ class AverageWordEmbedding_User(Feature):
         """
         set feature attribute to average word embedding (dim: 300) of the last user turn
         """
-        if context = None:
+        if context is None:
             self.feat = None
         else:
             X = np.zeros((self.dim,), dtype='float32')
