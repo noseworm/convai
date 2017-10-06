@@ -1,6 +1,8 @@
-from gensim.models import KeyedVectors
 from nltk.corpus import stopwords
 import numpy as np
+
+from embedding_metrics import w2v
+from embedding_metrics import greedy_score, extrema_score, average_score
 
 """
 This file defines different hand-enginered features based
@@ -13,11 +15,10 @@ the full dialogue score or the utterance score.
 continue adding features from https://docs.google.com/document/d/1PAVoHP_I39L6Rk1e8pIvq_wFW-_oyVa1qy1hjKC9E5M/edit
 """
 
-print "loading word2vec embeddings..."
-w2v = KeyedVectors.load_word2vec_format("../data/GoogleNews-vectors-negative300.bin", binary=True)
-
 print "loading nltk english stop words..."
 stop = set(stopwords.words('english'))
+print stop
+print ""
 
 
 def get(article, context, candidate, feature_list):
@@ -33,7 +34,7 @@ def get(article, context, candidate, feature_list):
     feature_objects = []  # list of feature objects
 
     for f in feature_list:
-        feature = eval(f)(article, context, candidate)
+        feature = eval(f)(article=article, context=context, candidate=candidate)
         feature_objects.append(feature)
 
     if len(feature_objects) == 0:
@@ -43,130 +44,15 @@ def get(article, context, candidate, feature_list):
     # To get raw features call "np.array([f.feat for f in feature_objects]).flatten()"
 
 
-##################################################
-### WORD EMBEDDING SIMILARITY METRIC FUNCTIONS ###
-##################################################
+#####################
+### GENERIC CLASS ###
+#####################
 
-def greedy_score(one, two):
-    """Greedy matching between two texts"""
-    dim = w2v.vector_size  # dimension of embeddings
-
-    tokens1 = one.strip().split(" ")
-    tokens2 = two.strip().split(" ")
-    # X = np.zeros((dim,))  # array([ 0.,  0.,  0.,  0.])
-    y_count = 0
-    x_count = 0
-    score = 0.0
-    Y = np.zeros((dim,1))  # array([ [0.],  [0.],  [0.],  [0.] ])
-    for tok in tokens2:    # for each token in the second text, add its column to Y
-        if tok in w2v:
-            y = np.array(w2v[tok])
-            y /= np.linalg.norm(y)
-            Y = np.hstack((Y, y.reshape((dim,1)) ))
-            y_count += 1
-    # Y ~ (dim, #of tokens in second text)
-    # Y /= np.linalg.norm(Y)
-
-    for tok in tokens1:  # for each token in the first text,
-        if tok in w2v:
-            x = np.array(w2v[tok])
-            x /= np.linalg.norm(x)
-            tmp = x.reshape((1,dim)).dot(Y)  # dot product with all other tokens from Y
-            score += np.max(tmp)  # add the max value between this token and any token in Y
-            x_count += 1
-
-    # if none of the words in response or ground truth have embeddings, return zero
-    if x_count < 1 or y_count < 1:
-        return 0.0
-
-    score /= float(x_count)
-    return score
-
-
-def extrema_score(one, two):
-    """Extrema embedding score between two texts"""
-    tokens1 = one.strip().split(" ")
-    tokens2 = two.strip().split(" ")
-    X = []
-    for tok in tokens1:
-        if tok in w2v:
-            X.append(w2v[tok])
-    Y = []
-    for tok in tokens2:
-        if tok in w2v:
-            Y.append(w2v[tok])
-
-    # if none of the words in text1 have embeddings, return 0
-    if np.linalg.norm(X) < 0.00000000001:
-        return 0.0
-
-    # if none of the words in text2 have embeddings, return 0
-    if np.linalg.norm(Y) < 0.00000000001:
-        return 0.0
-
-    xmax = np.max(X, 0)  # get positive max
-    xmin = np.min(X, 0)  # get abs of min
-    xtrema = []
-    for i in range(len(xmax)):
-        if np.abs(xmin[i]) > xmax[i]:
-            xtrema.append(xmin[i])
-        else:
-            xtrema.append(xmax[i])
-    X = np.array(xtrema)  # get extrema
-
-    ymax = np.max(Y, 0)
-    ymin = np.min(Y, 0)
-    ytrema = []
-    for i in range(len(ymax)):
-        if np.abs(ymin[i]) > ymax[i]:
-            ytrema.append(ymin[i])
-        else:
-            ytrema.append(ymax[i])
-    Y = np.array(ytrema)  # get extrema
-
-    score = np.dot(X, Y.T)/np.linalg.norm(X)/np.linalg.norm(Y)
-    return score
-
-
-def average_score(one, two):
-    """Average embedding score between two texts"""
-    dim = w2v.vector_size # dimension of embeddings
-    tokens1 = one.strip().split(" ")
-    tokens2 = two.strip().split(" ")
-    X = np.zeros((dim,))
-    for tok in tokens1:
-        if tok in w2v:
-            X += w2v[tok]
-    Y = np.zeros((dim,))
-    for tok in tokens2:
-        if tok in w2v:
-            Y += w2v[tok]
-
-    # if none of the words in text1 have embeddings, return 0
-    if np.linalg.norm(X) < 0.00000000001:
-        return 0.0
-
-    # if none of the words in text2 have embeddings, return 0
-    if np.linalg.norm(Y) < 0.00000000001:
-        return 0.0
-
-    X = np.array(X)/np.linalg.norm(X)
-    Y = np.array(Y)/np.linalg.norm(Y)
-    score = np.dot(X, Y.T)/np.linalg.norm(X)/np.linalg.norm(Y)
-    return score
-
-######################################################
-### WORD EMBEDDING SIMILARITY METRIC FUNCTIONS END ###
-######################################################
-
-
-class Feature(Object):
-
-    self.dim = -1
-    self.feat = None
+class Feature(object):
 
     def __init__(self, dim, article=None, context=None, candidate=None):
         self.dim = dim
+        self.feat = None
         
     def set(self, article, context, candidate):
         """
@@ -174,6 +60,13 @@ class Feature(Object):
         """
         pass
 
+
+############################
+### SPECIFIC SUB-CLASSES ###
+############################
+
+
+### Length ###
 
 class CandidateLength(Feature):
 
@@ -189,7 +82,7 @@ class CandidateLength(Feature):
         if candidate is None:
             self.feat = None
         else:
-            self.feat = float(len(candidate))
+            self.feat = float(len(candidate.strip().split()))
 
 
 class UserLength(Feature):
@@ -206,14 +99,16 @@ class UserLength(Feature):
         if context is None:
             self.feat = None
         else:
-            self.feat = float(len(context[-1]))
+            self.feat = float(len(context[-1].strip().split()))
 
+
+### Average embedding ###
 
 class AverageWordEmbedding_Candidate(Feature):
 
     def __init__(self, article=None, context=None, candidate=None):
         # Constructor: call super class constructor with dim=300
-        super(UserLength, self).__init__(w2v.vector_size, article, context, candidate)
+        super(AverageWordEmbedding_Candidate, self).__init__(w2v.vector_size, article, context, candidate)
         self.set(article, context, candidate)
 
     def set(self, article, context, candidate):
@@ -235,7 +130,7 @@ class AverageWordEmbedding_User(Feature):
 
     def __init__(self, article=None, context=None, candidate=None):
         # Constructor: call super class constructor with dim=300
-        super(UserLength, self).__init__(w2v.vector_size, article, context, candidate)
+        super(AverageWordEmbedding_User, self).__init__(w2v.vector_size, article, context, candidate)
         self.set(article, context, candidate)
 
     def set(self, article, context, candidate):
@@ -257,7 +152,7 @@ class AverageWordEmbedding_LastK(Feature):
 
     def __init__(self, k=6, article=None, context=None, candidate=None):
         # Constructor: call super class constructor with dim=300
-        super(UserLength, self).__init__(w2v.vector_size, article, context, candidate)
+        super(AverageWordEmbedding_LastK, self).__init__(w2v.vector_size, article, context, candidate)
         self.k = k
         self.set(article, context, candidate)
 
@@ -281,7 +176,7 @@ class AverageWordEmbedding_kUser(Feature):
 
     def __init__(self, k=3, article=None, context=None, candidate=None):
         # Constructor: call super class constructor with dim=300
-        super(UserLength, self).__init__(w2v.vector_size, article, context, candidate)
+        super(AverageWordEmbedding_kUser, self).__init__(w2v.vector_size, article, context, candidate)
         self.k = k
         self.set(article, context, candidate)
 
@@ -306,7 +201,7 @@ class AverageWordEmbedding_Article(Feature):
 
     def __init__(self, article=None, context=None, candidate=None):
         # Constructor: call super class constructor with dim=300
-        super(UserLength, self).__init__(w2v.vector_size, article, context, candidate)
+        super(AverageWordEmbedding_Article, self).__init__(w2v.vector_size, article, context, candidate)
         self.set(article, context, candidate)
 
     def set(self, article, context, candidate):
@@ -324,11 +219,13 @@ class AverageWordEmbedding_Article(Feature):
             self.feat = X
 
 
-class GreedyMatch_CandidateUser(Feature):
+### Candidate -- user turn match ###
+
+class GreedyScore_CandidateUser(Feature):
 
     def __init__(self, article=None, context=None, candidate=None):
         # Constructor: call super class constructor with dim=1
-        super(UserLength, self).__init__(1, article, context, candidate)
+        super(GreedyScore_CandidateUser, self).__init__(1, article, context, candidate)
         self.set(article, context, candidate)
 
     def set(self, article, context, candidate):
@@ -342,8 +239,204 @@ class GreedyMatch_CandidateUser(Feature):
             res2 = greedy_score(context[-1], candidate)
             self.feat = (res1 + res2) / 2.0
 
+
+class AverageScore_CandidateUser(Feature):
+
+    def __init__(self, article=None, context=None, candidate=None):
+        # Constructor: call super class constructor with dim=1
+        super(AverageScore_CandidateUser, self).__init__(1, article, context, candidate)
+        self.set(article, context, candidate)
+
+    def set(self, article, context, candidate):
+        """
+        set feature attribute to average embedding score (dim: 1) between candidate response & last user turn
+        """
+        if candidate is None or context is None:
+            self.feat = None
+        else:
+            self.feat = float(average_score(candidate, context[-1]))
+
+
+class ExtremaScore_CandidateUser(Feature):
+
+    def __init__(self, article=None, context=None, candidate=None):
+        # Constructor: call super class constructor with dim=1
+        super(ExtremaScore_CandidateUser, self).__init__(1, article, context, candidate)
+        self.set(article, context, candidate)
+
+    def set(self, article, context, candidate):
+        """
+        set feature attribute to extrema embedding score (dim: 1) between candidate response & last user turn
+        """
+        if candidate is None or context is None:
+            self.feat = None
+        else:
+            self.feat = float(extrema_score(candidate, context[-1]))
+
+
+### Candidate -- last k turns match ###
+
+class GreedyScore_CandidateLastK(Feature):
+
+    def __init__(self, k=6, article=None, context=None, candidate=None):
+        # Constructor: call super class constructor with dim=1
+        super(GreedyScore_CandidateLastK, self).__init__(1, article, context, candidate)
+        self.k = k
+        self.set(article, context, candidate)
+
+    def set(self, article, context, candidate):
+        """
+        set feature attribute to greedy score (dim: 1) between candidate response & last k turns
+        """
+        if candidate is None or context is None:
+            self.feat = None
+        else:
+            content = ' '.join(context[-self.k:])
+            res1 = greedy_score(candidate, content)
+            res2 = greedy_score(content, candidate)
+            self.feat = (res1 + res2) / 2.0
+
+
+class AverageScore_CandidateLastK(Feature):
+
+    def __init__(self, k=6, article=None, context=None, candidate=None):
+        # Constructor: call super class constructor with dim=1
+        super(AverageScore_CandidateLastK, self).__init__(1, article, context, candidate)
+        self.k = k
+        self.set(article, context, candidate)
+
+    def set(self, article, context, candidate):
+        """
+        set feature attribute to average embedding score (dim: 1) between candidate response & last k turns
+        """
+        if candidate is None or context is None:
+            self.feat = None
+        else:
+            content = ' '.join(context[-self.k:])
+            self.feat = float(average_score(candidate, content))
+
+
+class ExtremaScore_CandidateLastK(Feature):
+
+    def __init__(self, k=6, article=None, context=None, candidate=None):
+        # Constructor: call super class constructor with dim=1
+        super(ExtremaScore_CandidateLastK, self).__init__(1, article, context, candidate)
+        self.k = k
+        self.set(article, context, candidate)
+
+    def set(self, article, context, candidate):
+        """
+        set feature attribute to extrema embedding score (dim: 1) between candidate response & last k turns
+        """
+        if candidate is None or context is None:
+            self.feat = None
+        else:
+            content = ' '.join(context[-self.k:])
+            self.feat = float(extrema_score(candidate, content))
+
+
+### Candidate -- last k turns without stop words match ###
+
+class GreedyScore_CandidateLastK_noStop(Feature):
+
+    def __init__(self, k=6, article=None, context=None, candidate=None):
+        # Constructor: call super class constructor with dim=1
+        super(GreedyScore_CandidateLastK_noStop, self).__init__(1, article, context, candidate)
+        self.k = k
+        self.set(article, context, candidate)
+
+    def set(self, article, context, candidate):
+        """
+        set feature attribute to greedy score (dim: 1) between candidate response & last k turns without stop words
+        """
+        if candidate is None or context is None:
+            self.feat = None
+        else:
+            content = ' '.join(context[-self.k:])
+            content = ' '.join(filter(lambda word: word not in stop, content.strip().split()))
+            res1 = greedy_score(candidate, content)
+            res2 = greedy_score(content, candidate)
+            self.feat = (res1 + res2) / 2.0
+
+
+class AverageScore_CandidateLastK_noStop(Feature):
+
+    def __init__(self, k=6, article=None, context=None, candidate=None):
+        # Constructor: call super class constructor with dim=1
+        super(AverageScore_CandidateLastK_noStop, self).__init__(1, article, context, candidate)
+        self.k = k
+        self.set(article, context, candidate)
+
+    def set(self, article, context, candidate):
+        """
+        set feature attribute to average embedding score (dim: 1) between candidate response & last k turns without stop words
+        """
+        if candidate is None or context is None:
+            self.feat = None
+        else:
+            content = ' '.join(context[-self.k:])
+            content = ' '.join(filter(lambda word: word not in stop, content.strip().split()))
+            self.feat = float(average_score(candidate, content))
+
+
+class ExtremaScore_CandidateLastK_noStop(Feature):
+
+    def __init__(self, k=6, article=None, context=None, candidate=None):
+        # Constructor: call super class constructor with dim=1
+        super(ExtremaScore_CandidateLastK_noStop, self).__init__(1, article, context, candidate)
+        self.k = k
+        self.set(article, context, candidate)
+
+    def set(self, article, context, candidate):
+        """
+        set feature attribute to extrema embedding score (dim: 1) between candidate response & last k turns without stop words
+        """
+        if candidate is None or context is None:
+            self.feat = None
+        else:
+            content = ' '.join(context[-self.k:])
+            content = ' '.join(filter(lambda word: word not in stop, content.strip().split()))
+            self.feat = float(extrema_score(candidate, content))
+
+
 # TODO: continue defining new features like embedding metrics, word overlap metrics, lookup for specific words, etc...
 # Make sure to explain new features very clearly and mention the number of dimensions it is (ie: the number of values it returns)
 # continue adding features from https://docs.google.com/document/d/1PAVoHP_I39L6Rk1e8pIvq_wFW-_oyVa1qy1hjKC9E5M/edit
+
+
+if __name__ == '__main__':
+    article = "russia asks facebook to comply with personal data policy friday, september 29, 2017 \
+        on tuesday, russian government internet watchdog roskomnadzor 'insisted' us - based social \
+        networking website facebook comply with law # 242 on personal data of users in order to \
+        continue operating in the country . per law # 242 , user data of russian citizens should be \
+        hosted on local servers - the rule which business - oriented networking site linkedin did \
+        not agree to, for which linkedin was eventually blocked in the country."
+
+    context = ["hello user ! this article is very interesting don 't you think ?",
+        "hello chat bot ! yes indeed . looks like russia starts to apply the same rules as china",
+        "yeah i don 't know about that .",
+        "facebook should be available everywhere in the world",
+        "yeah i don 't know about that .",
+        "you don 't know much do you ? ",
+        "i am not a fan of russian policies",
+        "haha me neither !"
+    ]
+    candidate1 = "i am happy to make you laught"
+    candidate2 = "ha ha ha"
+    candidate3 = "i like facebook"
+
+    feature_objects = get(article, context, candidate1,
+        ['CandidateLength', 'UserLength',
+        'AverageWordEmbedding_Candidate', 'AverageWordEmbedding_User', 'AverageWordEmbedding_LastK', 'AverageWordEmbedding_kUser', 'AverageWordEmbedding_Article',
+        'GreedyScore_CandidateUser', 'AverageScore_CandidateUser', 'ExtremaScore_CandidateUser',
+        'GreedyScore_CandidateLastK', 'AverageScore_CandidateLastK', 'ExtremaScore_CandidateLastK',
+        'GreedyScore_CandidateLastK_noStop', 'AverageScore_CandidateLastK_noStop', 'ExtremaScore_CandidateLastK_noStop']
+    )
+
+    for feature_obj in feature_objects:
+        print feature_obj.__class__
+        print "feature:", feature_obj.feat
+        print "dim:", feature_obj.dim
+        print ""
 
 
