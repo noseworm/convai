@@ -4,6 +4,9 @@ import numpy as np
 from embedding_metrics import w2v
 from embedding_metrics import greedy_score, extrema_score, average_score
 
+import logging
+logger = logging.getLogger(__name__)
+
 """
 This file defines different hand-enginered features based
 on the conversation article, the conversation hisory, and
@@ -15,10 +18,10 @@ the full dialogue score or the utterance score.
 continue adding features from https://docs.google.com/document/d/1PAVoHP_I39L6Rk1e8pIvq_wFW-_oyVa1qy1hjKC9E5M/edit
 """
 
-print "loading nltk english stop words..."
+logger.info("loading nltk english stop words...")
 stop = set(stopwords.words('english'))
-print stop
-print ""
+logger.info(stop)
+logger.info("")
 
 
 def get(article, context, candidate, feature_list):
@@ -119,7 +122,7 @@ class AverageWordEmbedding_Candidate(Feature):
             self.feat = None
         else:
             X = np.zeros((self.dim,), dtype='float32')
-            for tok in candidate.strip().split(' '):
+            for tok in candidate.strip().split():
                 if tok in w2v:
                     X += w2v[tok]
             X = np.array(X)/np.linalg.norm(X)
@@ -141,7 +144,7 @@ class AverageWordEmbedding_User(Feature):
             self.feat = None
         else:
             X = np.zeros((self.dim,), dtype='float32')
-            for tok in context[-1].strip().split(' '):
+            for tok in context[-1].strip().split():
                 if tok in w2v:
                     X += w2v[tok]
             X = np.array(X)/np.linalg.norm(X)
@@ -165,7 +168,8 @@ class AverageWordEmbedding_LastK(Feature):
         else:
             X = np.zeros((self.dim,), dtype='float32')
             content = ' '.join(context[-self.k:])
-            for tok in content.strip().split(' '):
+            logger.debug("last %d turns: %s" % (self.k, content))
+            for tok in content.strip().split():
                 if tok in w2v:
                     X += w2v[tok]
             X = np.array(X)/np.linalg.norm(X)
@@ -190,7 +194,8 @@ class AverageWordEmbedding_kUser(Feature):
             X = np.zeros((self.dim,), dtype='float32')
             content = np.array(context)[range(-2*self.k+1, 0, 2)]
             content = ' '.join(content)
-            for tok in content.strip().split(' '):
+            logger.debug("last %d user turns: %s" % (self.k, content))
+            for tok in content.strip().split():
                 if tok in w2v:
                     X += w2v[tok]
             X = np.array(X)/np.linalg.norm(X)
@@ -212,7 +217,7 @@ class AverageWordEmbedding_Article(Feature):
             self.feat = None
         else:
             X = np.zeros((self.dim,), dtype='float32')
-            for tok in article.strip().split(' '):
+            for tok in article.strip().split():
                 if tok in w2v:
                     X += w2v[tok]
             X = np.array(X)/np.linalg.norm(X)
@@ -292,6 +297,7 @@ class GreedyScore_CandidateLastK(Feature):
             self.feat = None
         else:
             content = ' '.join(context[-self.k:])
+            logger.debug("last %d turns: %s" % (self.k, content))
             res1 = greedy_score(candidate, content)
             res2 = greedy_score(content, candidate)
             self.feat = (res1 + res2) / 2.0
@@ -313,6 +319,7 @@ class AverageScore_CandidateLastK(Feature):
             self.feat = None
         else:
             content = ' '.join(context[-self.k:])
+            logger.debug("last %d turns: %s" % (self.k, content))
             self.feat = float(average_score(candidate, content))
 
 
@@ -332,6 +339,7 @@ class ExtremaScore_CandidateLastK(Feature):
             self.feat = None
         else:
             content = ' '.join(context[-self.k:])
+            logger.debug("last %d turns: %s" % (self.k, content))
             self.feat = float(extrema_score(candidate, content))
 
 
@@ -354,6 +362,7 @@ class GreedyScore_CandidateLastK_noStop(Feature):
         else:
             content = ' '.join(context[-self.k:])
             content = ' '.join(filter(lambda word: word not in stop, content.strip().split()))
+            logger.debug("last %d turns: %s" % (self.k, content))
             res1 = greedy_score(candidate, content)
             res2 = greedy_score(content, candidate)
             self.feat = (res1 + res2) / 2.0
@@ -376,6 +385,7 @@ class AverageScore_CandidateLastK_noStop(Feature):
         else:
             content = ' '.join(context[-self.k:])
             content = ' '.join(filter(lambda word: word not in stop, content.strip().split()))
+            logger.debug("last %d turns: %s" % (self.k, content))
             self.feat = float(average_score(candidate, content))
 
 
@@ -396,6 +406,144 @@ class ExtremaScore_CandidateLastK_noStop(Feature):
         else:
             content = ' '.join(context[-self.k:])
             content = ' '.join(filter(lambda word: word not in stop, content.strip().split()))
+            logger.debug("last %d turns: %s" % (self.k, content))
+            self.feat = float(extrema_score(candidate, content))
+
+
+### Candidate -- last k user turns match ###
+
+class GreedyScore_CandidateKUser(Feature):
+
+    def __init__(self, k=3, article=None, context=None, candidate=None):
+        # Constructor: call super class constructor with dim=1
+        super(GreedyScore_CandidateKUser, self).__init__(1, article, context, candidate)
+        self.k = k
+        self.set(article, context, candidate)
+
+    def set(self, article, context, candidate):
+        """
+        set feature attribute to greedy score (dim: 1) between candidate response & last k user turns
+        """
+        if candidate is None or context is None:
+            self.feat = None
+        else:
+            content = np.array(context)[range(-2*self.k+1, 0, 2)]
+            content = ' '.join(content)
+            logger.debug("last %d user turns: %s" % (self.k, content))
+            res1 = greedy_score(candidate, content)
+            res2 = greedy_score(content, candidate)
+            self.feat = (res1 + res2) / 2.0
+
+
+class AverageScore_CandidateKUser(Feature):
+
+    def __init__(self, k=3, article=None, context=None, candidate=None):
+        # Constructor: call super class constructor with dim=1
+        super(AverageScore_CandidateKUser, self).__init__(1, article, context, candidate)
+        self.k = k
+        self.set(article, context, candidate)
+
+    def set(self, article, context, candidate):
+        """
+        set feature attribute to average embedding score (dim: 1) between candidate response & last k user turns
+        """
+        if candidate is None or context is None:
+            self.feat = None
+        else:
+            content = np.array(context)[range(-2*self.k+1, 0, 2)]
+            content = ' '.join(content)
+            logger.debug("last %d user turns: %s" % (self.k, content))
+            self.feat = float(average_score(candidate, content))
+
+
+class ExtremaScore_CandidateKUser(Feature):
+
+    def __init__(self, k=3, article=None, context=None, candidate=None):
+        # Constructor: call super class constructor with dim=1
+        super(ExtremaScore_CandidateKUser, self).__init__(1, article, context, candidate)
+        self.k = k
+        self.set(article, context, candidate)
+
+    def set(self, article, context, candidate):
+        """
+        set feature attribute to extrema embedding score (dim: 1) between candidate response & last k user turns
+        """
+        if candidate is None or context is None:
+            self.feat = None
+        else:
+            content = np.array(context)[range(-2*self.k+1, 0, 2)]
+            content = ' '.join(content)
+            logger.debug("last %d user turns: %s" % (self.k, content))
+            self.feat = float(extrema_score(candidate, content))
+
+
+### Candidate -- last k user turns without stop words match ###
+
+class GreedyScore_CandidateKUser_noStop(Feature):
+
+    def __init__(self, k=3, article=None, context=None, candidate=None):
+        # Constructor: call super class constructor with dim=1
+        super(GreedyScore_CandidateKUser_noStop, self).__init__(1, article, context, candidate)
+        self.k = k
+        self.set(article, context, candidate)
+
+    def set(self, article, context, candidate):
+        """
+        set feature attribute to greedy score (dim: 1) between candidate response & last k user turns without stop words
+        """
+        if candidate is None or context is None:
+            self.feat = None
+        else:
+            content = np.array(context)[range(-2*self.k+1, 0, 2)]
+            content = ' '.join(content)
+            content = ' '.join(filter(lambda word: word not in stop, content.strip().split()))
+            logger.debug("last %d user turns: %s" % (self.k, content))
+            res1 = greedy_score(candidate, content)
+            res2 = greedy_score(content, candidate)
+            self.feat = (res1 + res2) / 2.0
+
+
+class AverageScore_CandidateKUser_noStop(Feature):
+
+    def __init__(self, k=3, article=None, context=None, candidate=None):
+        # Constructor: call super class constructor with dim=1
+        super(AverageScore_CandidateKUser_noStop, self).__init__(1, article, context, candidate)
+        self.k = k
+        self.set(article, context, candidate)
+
+    def set(self, article, context, candidate):
+        """
+        set feature attribute to average embedding score (dim: 1) between candidate response & last k user turns without stop words
+        """
+        if candidate is None or context is None:
+            self.feat = None
+        else:
+            content = np.array(context)[range(-2*self.k+1, 0, 2)]
+            content = ' '.join(content)
+            content = ' '.join(filter(lambda word: word not in stop, content.strip().split()))
+            logger.debug("last %d user turns: %s" % (self.k, content))
+            self.feat = float(average_score(candidate, content))
+
+
+class ExtremaScore_CandidateKUser_noStop(Feature):
+
+    def __init__(self, k=3, article=None, context=None, candidate=None):
+        # Constructor: call super class constructor with dim=1
+        super(ExtremaScore_CandidateKUser_noStop, self).__init__(1, article, context, candidate)
+        self.k = k
+        self.set(article, context, candidate)
+
+    def set(self, article, context, candidate):
+        """
+        set feature attribute to extrema embedding score (dim: 1) between candidate response & last k user turns without stop words
+        """
+        if candidate is None or context is None:
+            self.feat = None
+        else:
+            content = np.array(context)[range(-2*self.k+1, 0, 2)]
+            content = ' '.join(content)
+            content = ' '.join(filter(lambda word: word not in stop, content.strip().split()))
+            logger.debug("last %d user turns: %s" % (self.k, content))
             self.feat = float(extrema_score(candidate, content))
 
 
@@ -405,6 +553,8 @@ class ExtremaScore_CandidateLastK_noStop(Feature):
 
 
 if __name__ == '__main__':
+    logging.basicConfig(level=logging.DEBUG, format="%(asctime)s: %(name)s: %(levelname)s: %(message)s")
+
     article = "russia asks facebook to comply with personal data policy friday, september 29, 2017 \
         on tuesday, russian government internet watchdog roskomnadzor 'insisted' us - based social \
         networking website facebook comply with law # 242 on personal data of users in order to \
@@ -425,18 +575,19 @@ if __name__ == '__main__':
     candidate2 = "ha ha ha"
     candidate3 = "i like facebook"
 
-    feature_objects = get(article, context, candidate1,
-        ['CandidateLength', 'UserLength',
+    features = ['CandidateLength', 'UserLength',
         'AverageWordEmbedding_Candidate', 'AverageWordEmbedding_User', 'AverageWordEmbedding_LastK', 'AverageWordEmbedding_kUser', 'AverageWordEmbedding_Article',
         'GreedyScore_CandidateUser', 'AverageScore_CandidateUser', 'ExtremaScore_CandidateUser',
         'GreedyScore_CandidateLastK', 'AverageScore_CandidateLastK', 'ExtremaScore_CandidateLastK',
-        'GreedyScore_CandidateLastK_noStop', 'AverageScore_CandidateLastK_noStop', 'ExtremaScore_CandidateLastK_noStop']
-    )
+        'GreedyScore_CandidateLastK_noStop', 'AverageScore_CandidateLastK_noStop', 'ExtremaScore_CandidateLastK_noStop',
+        'GreedyScore_CandidateKUser', 'AverageScore_CandidateKUser', 'ExtremaScore_CandidateKUser',
+        'GreedyScore_CandidateKUser_noStop', 'AverageScore_CandidateKUser_noStop', 'ExtremaScore_CandidateKUser_noStop']
 
-    for feature_obj in feature_objects:
-        print feature_obj.__class__
-        print "feature:", feature_obj.feat
-        print "dim:", feature_obj.dim
-        print ""
+    for feature in features:
+        logger.info("class: %s" % feature)
+        feature_obj = get(article, context, candidate1, [feature])[0]
+        logger.info("feature: %s" % (feature_obj.feat,))
+        logger.info("dim: %d" % feature_obj.dim)
+        logger.info("")
 
 
