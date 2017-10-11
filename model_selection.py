@@ -92,13 +92,17 @@ class ModelSelection(object):
                 ALL_POLICIES)  # sample a random policy
 
             # save the article for later use
-            text = re.sub(r'/\start', '', text)
+            text = re.sub(r'\/start', '', text)
             # remove urls
-            text = re.sub(r'^https?:\/\/.*[\r\n]*', '', text, flags=re.MULTILINE)
+            text = re.sub(r'https?:\/\/.*[\r\n]*', '', text, flags=re.MULTILINE)
             self.article_text[chat_id] = nlp(unicode(text))
             self._get_nouns(chat_id)
-            self.candidate_model[chat_id] = CandidateQuestions_Wrapper('', self.article_text[chat_id],
+            try:
+                self.candidate_model[chat_id] = CandidateQuestions_Wrapper('', self.article_text[chat_id],
                                                                        conf.candidate['dict_file'], 'candidate_question')
+            except Exception as e:
+                logger.error('Exception in candidate model init')
+                logger.error(str(e))
             # initialize bored count to 0 for this new chat
             self.boring_count[chat_id] = 0
 

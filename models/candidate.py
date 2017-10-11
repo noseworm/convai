@@ -60,11 +60,14 @@ class CandidateQuestions(object):
 
     # generate a random response based on the article
     def get_response(self):
+        response = ''
+         # if not entities then return blank
+        if len(self.entities_str) == 0:
+            return response
         # select randomly among top_n entities as per distribution
         token = self._get_entity(random.choice(self.token_distribution[:self.top_n])[0])
         logger.info(token)
         # get the ent_type_ and sample a line to use
-        response = ''
         if token.label_.lower() in self.entity2line:
             line = self.dataset[random.choice(self.entity2line[token.label_.lower()])]
             logging.info("Choosing line : " + line)
