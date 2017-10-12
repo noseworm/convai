@@ -23,3 +23,5 @@ vendor/pkg/
 *.zip
 data/GoogleNews-vectors-negative300.bin
 data/cookies.txt
+leaderboard.csv
+leaderboard.md

@@ -20,7 +20,7 @@ def valid_chat(usr_turns, bot_turns):
     long_enough = len(usr_turns) >= 5
     polite = True  # TODO? check for bad language?
     novote = filter(lambda turn: turn['evaluation']==0, bot_turns)
-    voted = float(len(novote)) / len(bot_turns) < 0.15  # voted 95% of all bot turns
+    voted = float(len(novote)) / len(bot_turns) < 0.15  # voted at least 95% of all bot turns
     return long_enough and polite and voted
 
 def get_top_users():
@@ -41,7 +41,7 @@ def get_top_users():
                     user = users['username']
                     user_id = users['id']
             if user not in user_dict:
-                user_dict[user] = {'valid_chats': 0, 'non-valid-chats': 0, 'total_turns': 0,
+                user_dict[user] = {'valid_chats': 0, 'non-valid_chats': 0, 'total_turns': 0,
                                    'max_turns': 0, 'min_turns': 99999,
                                    'average_quality': 0, 'average_breadth': 0, 'average_engagement': 0,
                                    'average_upvotes': 0, 'average_downvotes': 0}
@@ -59,7 +59,7 @@ def get_top_users():
                         evaluation = evals
 
                 av_div = 1
-                if user_dict[user]['chats'] > 1:
+                if user_dict[user]['valid_chats'] > 1:
                     av_div = 2
                 user_dict[user]['average_quality'] = round(
                     1.0 * (user_dict[user]['average_quality'] + evaluation['quality']) / av_div, 2)
@@ -75,12 +75,14 @@ def get_top_users():
                 user_dict[user]['average_downvotes'] = round(
                     1.0 * (user_dict[user]['average_downvotes'] + downvotes) / av_div, 2)
             else:
-                user_dict[user]['non-valid-chats'] += 1
+                user_dict[user]['non-valid_chats'] += 1
 
     # Remove users with 0 valid chats:
-    
+    bad_users = filter(lambda uid: user_dict[uid]['valid_chats'] < 1, user_dict.keys())
+    for uid in bad_users:
+        del(user_dict[uid])
 
-    order = reversed(sorted(user_dict.keys(), key=lambda x: user_dict[x]['chats']))
+    order = reversed(sorted(user_dict.keys(), key=lambda x: user_dict[x]['valid_chats']))
     return user_dict, order
 
 
