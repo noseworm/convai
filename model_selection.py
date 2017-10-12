@@ -88,8 +88,7 @@ class ModelSelection(object):
         if '/start' in text:
             # Make sure we didn't sample a policy before
             assert self.policy_mode == Policy.NONE
-            self.policy_mode = random.choice(
-                ALL_POLICIES)  # sample a random policy
+            self.policy_mode = random.choice(ALL_POLICIES)  # sample a random policy
 
             # save the article for later use
             text = re.sub(r'\/start', '', text)
@@ -103,30 +102,33 @@ class ModelSelection(object):
             except Exception as e:
                 logger.error('Exception in candidate model init')
                 logger.error(str(e))
+
             # initialize bored count to 0 for this new chat
             self.boring_count[chat_id] = 0
 
             # add a small delay
             time.sleep(2)
 
-            resp, context = self.candidate_model[chat_id].get_response(
-                chat_id, '', context)
+            if self.candidate_model[chat_id]:  # make sure we initialized the model before
+                resp, context = self.candidate_model[chat_id].get_response(chat_id, '', context)
+            else:
+                resp = ''
             if resp == '':
                 resp = random.choice(["That's a short article, don't you think? Not sure what's it about.",
                                       "Apparently I am too dumb for this article. What's it about?"])
                 context.append('<first_speaker>' + resp + '</s>')
-            return (resp, context, 'starter'), Policy.NONE
+            return (resp, context, 'starter'), self.policy_mode
 
         # if text contains emoji's, strip them
         text, emojis = self.strip_emojis(text)
         if emojis and len(text.strip()) < 1:
             # if text had only emoji, give back the emoji itself
-            return (emojis, context, 'emoji'), Policy.NONE
+            return (emojis, context, 'emoji'), self.policy_mode
 
         # if query falls under dumb questions, respond appropriately
         if self.dumb_qa.isMatch(text):
             resp, context = self.dumb_qa.get_response(chat_id, text, context)
-            return (resp, context, 'dumb qa'), Policy.NONE
+            return (resp, context, 'dumb qa'), self.policy_mode
 
         ###
         # chat selection logic
