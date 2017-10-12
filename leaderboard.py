@@ -89,7 +89,7 @@ def get_top_users():
 if __name__ == '__main__':
     user_dict, order = get_top_users()
     t = Texttable()
-    header_order = ['valid_chats','total_turns','max_turns','min_turns']
+    header_order = ['valid_chats', 'total_turns', 'max_turns', 'min_turns', 'non-valid_chats']
     rows = ['username'] + header_order
     indv_rows = [[user] + [user_dict[user][p]
                            for p in rows[1:]] for user in order]
