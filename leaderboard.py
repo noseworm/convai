@@ -16,6 +16,13 @@ log_db = db.dialogs
 chat_db = db.local
 
 
+def valid_chat(usr_turns, bot_turns):
+    long_enough = len(usr_turns) >= 5
+    polite = True  # TODO? check for bad language?
+    novote = filter(lambda turn: turn['evaluation']==0, bot_turns)
+    voted = float(len(novote)) / len(bot_turns) < 0.15  # voted 95% of all bot turns
+    return long_enough and polite and voted
+
 def get_top_users():
     local_chats = list(chat_db.find({}))
     user_dict = {}
@@ -34,46 +41,53 @@ def get_top_users():
                     user = users['username']
                     user_id = users['id']
             if user not in user_dict:
-                user_dict[user] = {'chats': 0, 'turns': 0, 'max_turns': 0, 'min_turns': 99999,
-                                   'average_quality': 0, 'average_breadth': 0, 'average_engagement': 0, 'average_upvotes': 0, 'average_downvotes': 0}
-            turns = [ch for ch in log_chats[0]
-                     ['thread'] if ch['userId'] == user_id]
-            user_dict[user]['chats'] += 1
-            user_dict[user]['turns'] += len(turns)
-            user_dict[user]['max_turns'] = max(
-                len(turns), user_dict[user]['max_turns'])
-            user_dict[user]['min_turns'] = min(
-                len(turns), user_dict[user]['min_turns'])
-            evaluation = {}
-            for evals in log_chats[0]['evaluation']:
-                if evals['userId'] == user_id:
-                    evaluation = evals
-            av_div = 1
-            if user_dict[user]['chats'] > 1:
-                av_div = 2
-            user_dict[user]['average_quality'] = round(
-                1.0 * (user_dict[user]['average_quality'] + evaluation['quality']) / av_div, 2)
-            user_dict[user]['average_breadth'] = round(
-                1.0 * (user_dict[user]['average_breadth'] + evaluation['breadth']) / av_div, 2)
-            user_dict[user]['average_engagement'] = round(
-                1.0 * (user_dict[user]['average_engagement'] + evaluation['engagement']) / av_div, 2)
-            bot_turns = [ch for ch in log_chats[0]
-                         ['thread'] if ch['userId'] != user_id]
-            upvotes = len([ch for ch in bot_turns if ch['evaluation'] == 2])
-            downvotes = len([ch for ch in bot_turns if ch['evaluation'] == 1])
-            user_dict[user]['average_upvotes'] = round(
-                1.0 * (user_dict[user]['average_upvotes'] + upvotes) / av_div, 2)
-            user_dict[user]['average_downvotes'] = round(
-                1.0 * (user_dict[user]['average_downvotes'] + downvotes) / av_div, 2)
-    order = reversed(
-        sorted(user_dict.keys(), key=lambda x: user_dict[x]['chats']))
+                user_dict[user] = {'valid_chats': 0, 'non-valid-chats': 0, 'total_turns': 0,
+                                   'max_turns': 0, 'min_turns': 99999,
+                                   'average_quality': 0, 'average_breadth': 0, 'average_engagement': 0,
+                                   'average_upvotes': 0, 'average_downvotes': 0}
+            usr_turns = [ch for ch in log_chats[0]['thread'] if ch['userId'] == user_id]
+            bot_turns = [ch for ch in log_chats[0]['thread'] if ch['userId'] != user_id]
+            if valid_chat(usr_turns, bot_turns):
+                user_dict[user]['valid_chats'] += 1
+                user_dict[user]['total_turns'] += len(usr_turns)
+                user_dict[user]['max_turns'] = max(len(usr_turns), user_dict[user]['max_turns'])
+                user_dict[user]['min_turns'] = min(len(usr_turns), user_dict[user]['min_turns'])
+
+                evaluation = {}
+                for evals in log_chats[0]['evaluation']:
+                    if evals['userId'] == user_id:
+                        evaluation = evals
+
+                av_div = 1
+                if user_dict[user]['chats'] > 1:
+                    av_div = 2
+                user_dict[user]['average_quality'] = round(
+                    1.0 * (user_dict[user]['average_quality'] + evaluation['quality']) / av_div, 2)
+                user_dict[user]['average_breadth'] = round(
+                    1.0 * (user_dict[user]['average_breadth'] + evaluation['breadth']) / av_div, 2)
+                user_dict[user]['average_engagement'] = round(
+                    1.0 * (user_dict[user]['average_engagement'] + evaluation['engagement']) / av_div, 2)
+
+                upvotes = len([ch for ch in bot_turns if ch['evaluation'] == 2])
+                downvotes = len([ch for ch in bot_turns if ch['evaluation'] == 1])
+                user_dict[user]['average_upvotes'] = round(
+                    1.0 * (user_dict[user]['average_upvotes'] + upvotes) / av_div, 2)
+                user_dict[user]['average_downvotes'] = round(
+                    1.0 * (user_dict[user]['average_downvotes'] + downvotes) / av_div, 2)
+            else:
+                user_dict[user]['non-valid-chats'] += 1
+
+    # Remove users with 0 valid chats:
+    
+
+    order = reversed(sorted(user_dict.keys(), key=lambda x: user_dict[x]['chats']))
     return user_dict, order
 
 
 if __name__ == '__main__':
     user_dict, order = get_top_users()
     t = Texttable()
-    header_order = ['chats','turns','max_turns','min_turns']
+    header_order = ['valid_chats','total_turns','max_turns','min_turns']
     rows = ['username'] + header_order
     indv_rows = [[user] + [user_dict[user][p]
                            for p in rows[1:]] for user in order]
