@@ -11,6 +11,7 @@ import os
 import numpy
 import codecs
 import copy
+from nltk.util import ngrams
 
 from dialog_encdec import DialogEncoderDecoder
 from numpy_compat import argpartition
@@ -237,6 +238,15 @@ class Sampler(object):
             if k <= min_length:
                 next_probs[:, self.model.eos_sym] = 0
                 next_probs[:, self.model.eod_sym] = 0
+
+            # avoid repeating the same trigram in one sentence
+            for b_idx in xrange(len(gen)):
+                trigrams = set(ngrams(gen[b_idx], 3))
+                if len(trigrams) > 0:
+                    for w in xrange(self.model.state['idim']):
+                        if tuple(gen[b_idx][-2:]+[w]) in trigrams:
+                            next_probs[b_idx, w] = 0
+
              
             # Update costs 
             next_costs = numpy.array(costs)[:, None] - numpy.log(next_probs)

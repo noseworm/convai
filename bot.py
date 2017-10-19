@@ -13,7 +13,10 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 """
-
+# encoding=utf8  
+import sys  
+reload(sys)  
+sys.setdefaultencoding('utf8')
 import requests
 import os
 import json
@@ -27,6 +30,7 @@ import random
 import emoji
 import storage
 import logging
+import traceback
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(name)s.%(funcName)s +%(lineno)s: %(levelname)-8s [%(process)d] %(message)s',
@@ -125,7 +129,7 @@ class ConvAIRLLBot:
         #texts = ['I love you!', 'Wow!', 'Really?', 'Nice!', 'Hi', 'Hello', '', '/end']
         #text = texts[random.randint(0, 7)]
 
-        if text == '':
+        if text.strip() == '':
             logging.info("Decided to respond with random emoji")
             data = {
                 'text': random.choice(emoji.UNICODE_EMOJI.keys()),
@@ -195,6 +199,7 @@ def main():
             logging.debug("Sleep for 1 sec. before new try")
         except Exception as e:
             logging.error(e)
+            traceback.format_exc()
 
 
 if __name__ == '__main__':

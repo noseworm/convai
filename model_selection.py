@@ -59,7 +59,7 @@ class ModelSelection(object):
         r, _ = self.qa_hred.get_response(1, 'test statement', [])
         r, _ = self.de_model_reddit.get_response(1, 'test statement', [])
         r, _ = self.drqa.get_response(
-            1, 'Where is Daniel?', [], 'Daniel went to the kitchen')
+            1, 'Where is Daniel?', [], nlp(unicode('Daniel went to the kitchen')))
 
     def clean(self, chat_id):
         del self.article_text[chat_id]
@@ -108,11 +108,14 @@ class ModelSelection(object):
 
             # add a small delay
             time.sleep(2)
-
-            if self.candidate_model[chat_id]:  # make sure we initialized the model before
-                resp, context = self.candidate_model[chat_id].get_response(chat_id, '', context)
-            else:
-                resp = ''
+            resp = ''
+            try:
+                if self.candidate_model[chat_id]: # make sure we initialized the model before
+                resp, context = self.candidate_model[chat_id].get_response(
+                    chat_id, '', context)
+            except Exception as e:
+                logger.error('Error in generating candidate response')
+                logger.error(str(e))
             if resp == '':
                 resp = random.choice(["That's a short article, don't you think? Not sure what's it about.",
                                       "Apparently I am too dumb for this article. What's it about?"])
@@ -271,7 +274,7 @@ class ModelSelection(object):
     def hredx2_drqa_policy(self, chat_id, text, context):
         # randomly decide a model to query to get a response:
         # DrQA has probability .5, hred-reddit .25, hred-twitter .25
-        models = ['hred-twitter', 'hred-reddit', 'drda', 'drqa']
+        models = ['hred-twitter', 'hred-reddit', 'drqa', 'drqa']
         chosen_model = random.choice(models)
         origin_context = copy.deepcopy(context)
 
