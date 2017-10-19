@@ -61,7 +61,7 @@ class CandidateQuestions(object):
     # generate a random response based on the article
     def get_response(self):
         response = ''
-         # if not entities then return blank
+        # if not entities then return blank
         if len(self.entities_str) == 0:
             return response
         # select randomly among top_n entities as per distribution
@@ -78,7 +78,5 @@ class CandidateQuestions(object):
             self.done_responses.append(response)
         logger.info('Response: %s' % response)
         return response
-
-
 
 

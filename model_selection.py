@@ -68,12 +68,6 @@ class ModelSelection(object):
         del self.boring_count[chat_id]
         self.policy_mode = Policy.NONE
 
-    # get all the nouns from the text
-    def _get_nouns(self, chat_id):
-        self.article_nouns[chat_id] = [
-            p.text for p in self.article_text[chat_id] if p.pos_ == 'NOUN']
-        print self.article_nouns[chat_id]
-
     def strip_emojis(self, str):
         tokens = set(list(str))
         emojis = list(tokens.intersection(set(emoji.UNICODE_EMOJI.keys())))
@@ -90,12 +84,19 @@ class ModelSelection(object):
             assert self.policy_mode == Policy.NONE
             self.policy_mode = random.choice(ALL_POLICIES)  # sample a random policy
 
-            # save the article for later use
+            # remove start token
             text = re.sub(r'\/start', '', text)
             # remove urls
             text = re.sub(r'https?:\/\/.*[\r\n]*', '', text, flags=re.MULTILINE)
+            # save the article for later use
             self.article_text[chat_id] = nlp(unicode(text))
-            self._get_nouns(chat_id)
+            # save all nouns from the article
+            self.article_nouns[chat_id] = [
+                p.text for p in self.article_text[chat_id] if p.pos_ == 'NOUN'
+            ]
+            print self.article_nouns[chat_id]
+
+            # Initialize candidate model, responsible for generating a question on the article
             try:
                 self.candidate_model[chat_id] = CandidateQuestions_Wrapper('', self.article_text[chat_id],
                                                                        conf.candidate['dict_file'], 'candidate_question')
@@ -108,29 +109,38 @@ class ModelSelection(object):
 
             # add a small delay
             time.sleep(2)
+
+            # Try to generate a question on this article
             resp = ''
             try:
                 if self.candidate_model[chat_id]: # make sure we initialized the model before
-                resp, context = self.candidate_model[chat_id].get_response(
-                    chat_id, '', context)
+                    resp, context = self.candidate_model[chat_id].get_response(
+                        chat_id, '', context)
             except Exception as e:
                 logger.error('Error in generating candidate response')
                 logger.error(str(e))
+
             if resp == '':
                 resp = random.choice(["That's a short article, don't you think? Not sure what's it about.",
                                       "Apparently I am too dumb for this article. What's it about?"])
+                # append random response to context here since candidate_model wasn't able to do it
                 context.append('<first_speaker>' + resp + '</s>')
+
+            # return generated response, new context (contains `resp`), model_name, policy
             return (resp, context, 'starter'), self.policy_mode
 
         # if text contains emoji's, strip them
         text, emojis = self.strip_emojis(text)
         if emojis and len(text.strip()) < 1:
             # if text had only emoji, give back the emoji itself
+            # NOTE: shouldn't we append the `resp` (in this case emoji) to the context like everywhere else?
             return (emojis, context, 'emoji'), self.policy_mode
 
         # if query falls under dumb questions, respond appropriately
         if self.dumb_qa.isMatch(text):
+            # generate response and update context
             resp, context = self.dumb_qa.get_response(chat_id, text, context)
+            # return generated response, new context (contains `resp`), model_name, policy
             return (resp, context, 'dumb qa'), self.policy_mode
 
         ###
