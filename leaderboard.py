@@ -18,6 +18,10 @@ chat_db = db.local
 
 def valid_chat(usr_turns, bot_turns):
     long_enough = len(usr_turns) >= 5
+    # print "bot: %d && usr: %d" % (len(bot_turns), len(usr_turns))
+    # if len(bot_turns) != len(usr_turns)+2 and len(bot_turns) != len(usr_turns)+1:
+    #     print "%d != %d+1|2 with\nusr=%s\nbot=%s" % (len(bot_turns), len(usr_turns), usr_turns, bot_turns)
+
     polite = True  # TODO? check for bad language?
     novote = filter(lambda turn: turn['evaluation']==0, bot_turns)
     voted = float(len(novote)) / len(bot_turns) < 0.15  # voted at least 95% of all bot turns

@@ -42,12 +42,13 @@ def reformat(json_data):
     formated_data = []
 
     for dialog in json_data:
+        print dialog
         # get user id for this chat
         uid = None
         for usr in dialog['users']:
             if usr['userType'] == 'ai.ipavlov.communication.TelegramChat':
                 uid = usr['id']
-        if uid is None
+        if uid is None:
             print "Warning: no user of type ai.ipavlov.communication.TelegramChat found, skipping this chat!"
             continue
 
