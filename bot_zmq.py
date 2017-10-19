@@ -31,6 +31,7 @@ import emoji
 import storage
 import logging
 import traceback
+import zmq
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(name)s.%(funcName)s +%(lineno)s: %(levelname)-8s [%(process)d] %(message)s',
@@ -166,18 +167,18 @@ def main():
     print "loading models"
     mSelect.initialize_models()  # should we start this in a new thread instead..?
 
+    # This version of bot.py employs ZMQ sockets to connect to client
+    # For ParlAI integration
+
+    SOCKET_PORT = conf.socket_port
+    context = zmq.Context()
+    socket = context.socket(zmq.REP)
+    socket.bind("tcp://*:%s" % SOCKET_PORT)
+    
     while True:
         try:
-            time.sleep(1)
-            logging.debug("Get updates from server")
-            res = requests.get(os.path.join(BOT_URL, 'getUpdates'))
-
-            if res.status_code != 200:
-                logging.info(res.text)
-                res.raise_for_status()
-
-            logging.debug("Got %s new messages" % len(res.json()))
-            for m in res.json():
+            m = socket.recv_json()
+            if m:
                 state = ChatState.START  # assume new chat all the time
                 # will become false when we call bot.observe(m), except when it's really a new chat
                 while state == ChatState.START:
@@ -188,15 +189,7 @@ def main():
                     new_message = bot.act(chat_id, state, m)
                     if new_message is not None:
                         print new_message
-                        logging.info("Send response to server.")
-                        res = requests.post(os.path.join(BOT_URL, 'sendMessage'),
-                                            json=new_message,
-                                            headers={'Content-Type': 'application/json'})
-                        if res.status_code != 200:
-                            logging.info(res.text)
-                            res.raise_for_status()
-
-            logging.debug("Sleep for 1 sec. before new try")
+                        socket.send_json(new_message)
         except Exception as e:
             logging.error(e)
             traceback.format_exc()

@@ -34,7 +34,8 @@ config_data = {
         },
         'dumb':{
             'dict_file':'data/dumb_questions.json'
-        }
+        },
+        "socket_port" : 8094
 }
 
 def get_config():
