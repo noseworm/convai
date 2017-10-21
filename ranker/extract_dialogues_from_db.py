@@ -11,8 +11,16 @@ score_map = {0: 0.,
              1: -1.,
              2: +1.}
 
+
 def query_db():
     """
+    Collect messages from db.local (client side) and db.dialogs (server side)
+    Builds a list of conversation with evaluation fields (from db.dialogs)
+      and model & policy fields for each message in each conversation.
+    - Loop through conversations in the client side (db.local)
+    - Get the corresponding server's dialog and add to the list we want to return
+    - Use the client's dialog to get model & policy fields of each convo msg
+    :return: array of dictionaries. each dictionary is a conversation.
     """
     PORT = 8091
     CLIENT = '132.206.3.23'
@@ -22,30 +30,33 @@ def query_db():
 
     chats = []
 
+    # loop through each conversation on the client side because it only has valid
+    #   conversations. db.dialogs also contains old and invalid convos.
     for d_local in list(db.local.find({})):
-        d_id = d_local['dialogId']
+        d_id = d_local['dialogId']  # convo ID
+        # get the same conversation from the server side (db.dialogs)
         d_servr = list(db.dialogs.find({'dialogId': d_id}))
         if len(d_servr) > 1:
             print "Error: two dialogs with same id (%s)!" % did
             continue
         elif len(d_servr) < 1:
-            print "Warning: no dialog found in server for id %s." % d_id
+            print "Warning: no dialog found in db.dialogs for dialogId %s." % d_id
             continue
         d_servr = d_servr[0]
-        data = copy.deepcopy(d_servr)
+        data = copy.deepcopy(d_servr)  # make hard copy of convo
 
         # map from local msg text to local msg object
         local_msgs = dict(
             [(msg['text'], msg) for msg in d_local['logs'] if msg['text'] is not None]
         )
-        # list of messages on the server: the order we want to keep
+        # list of messages in the server's convo: the order we want to keep
         servr_msgs = [msg for msg in d_servr['thread'] if msg['text'] is not None]
 
-        # n_msgs = min(len(local_msgs), len(servr_msgs))
+        # for each message in the server's dialog (the one we want to keep)
         for msg in servr_msgs:
             text = msg['text']
             if text not in local_msgs:
-                print "[%s] Warning: msg not in local server: %s" % (d_id, msg['text'])
+                print "Warning: msg (`%s`) from dialogId (%s) not found in db.local" % (msg['text'], d_id)
                 model = 'none'
                 policy = -1
             else:
@@ -63,10 +74,10 @@ def valid_chat(usr_turns, bot_turns, k=2):
     # Check that user sent at least k messages and bot replied with 2 more messages
     long_enough = len(usr_turns) >= k and len(bot_turns) >= k
 
-    print "bot:%d %% usr:%d" % (len(bot_turns), len(usr_turns))
-    valid_flow = len(bot_turns) == len(usr_turns) + 2  # normal flow: bot - bot - (usr - bot)*n
-    early_stop = len(bot_turns) == len(usr_turns) + 1  # user sent /end before the bot reply or sent two msg in a row during the conversation
-    usr_sent_more_than_1msg == len(bot_turns) <= len(usr_turns)  # usr sent more than 1 message before the bot had time to reply
+    # print "bot:%d %% usr:%d" % (len(bot_turns), len(usr_turns))
+    # valid_flow = len(bot_turns) == len(usr_turns) + 2  # normal flow: bot - bot - (usr - bot)*n
+    # early_stop = len(bot_turns) == len(usr_turns) + 1  # user sent /end before the bot reply or sent two msg in a row during the conversation
+    # usr_sent_more_than_1msg == len(bot_turns) <= len(usr_turns)  # usr sent more than 1 message before the bot had time to reply
 
     ## TODO: Check for bad language
     polite = True
@@ -79,71 +90,110 @@ def valid_chat(usr_turns, bot_turns, k=2):
     return long_enough and polite and voted
 
 
-def reformat(json_data):
+def reformat(json_data, voted_only=False):
     """
     Create a list of dictionaries of the form {'article':<str>, 'context':<list of str>, 'candidate':<str>, 'r':<-1,0,1>, 'R':<0-5>}
     TODO: make sure the list is ordered by article!! ie: [article1, ..., article1, article2, ..., article2, article3, ..., ..., article_n]
+    :param json_data: list of conversations. each conversation is a dictionary
+    :param voted_only: consider only the messages which have been up- or down- voted
+    :return: list of training instances. each instance is a dictionary
     """
     formated_data = []
 
     for dialog in json_data:
-        # get the bot id for this chat if there is one
-        bid = None
+        # get the user id for this chat if there is one
+        uid = None
         for usr in dialog['users']:
-            if usr['userType'] == 'Bot':
-               bid = usr['id']
-        
-        if bid is None:
-            print "No bot in this chat (%s)! consider both users as potential bots!" % ([u['userType'] for u in dialog['users']], )
-            both_human = True
-        else:
-            both_human = False
+            if usr['userType'] == 'ai.ipavlov.communication.TelegramChat':
+               uid = usr['id']
+        # skip that conversation if no user found
+        if uid is None:
+            print "Error: No user in this chat (%s), skipping it!" % dialog['dialogId']
+            continue
 
         # get user_turns and bot_turns
         usr_turns = [msg for msg in dialog['thread'] if msg['userId'] == uid]
         bot_turns = [msg for msg in dialog['thread'] if msg['userId'] != uid]
 
-        if valid_chat(usr_turns, bot_turns):
+        if valid_chat(usr_turns, bot_turns, k=4):
             # get article text for that conversation
             article = dialog['context']
             # get full evaluation for that conversation
-            full_evals = []
+            full_eval = []
             for evl in dialog['evaluation']:
-                if evl['userId'] != bid:
-                    full_evals.append( (2.0*evl['quality'] + 1.0*evl['breadth'] + 1.0*evl['engagement']) / 4.0 )
-            if len(full_eval) == 0:
-                print "Warning: no full evaluation found for this conversation, skipping it"
+                if evl['userId'] == uid:
+                    full_eval.append( (2.0*evl['quality'] + 1.0*evl['breadth'] + 1.0*evl['engagement']) / 4.0 )
+            if len(full_eval) < 1:
+                print "Error: no evaluation found for this conversation (%s), skipping it" % dialog['dialogId']
                 continue
+            elif len(full_eval) > 1:
+                print "Error: more than one evaluation found for this conversation (%s), skipping it" % dialog['dialogId']
+                continue
+            full_eval = full_eval[0]
 
-            # Go through conversation to create a list of (article, context, candidate, score, reward) instances
+            # Go through conversation to create a list of (article, context, candidate, score, reward, policy, model) instances
             context = []
-            last_msg_is_from_user = False
-            for msg_idx, msg in enumerate(dialog['thread']):
-                # if user started the conversation and not the bot there was a pb. skip this one
-                # if msg_idx == 0 and msg['userId'] == uid:
-                #     print "Warning: user started the conversation! Skipping this chat"
-                #     break
-                # if begining of converesation, just fill in the context
+            last_sender_id = None
+            added_instances_from_this_chat = False  # True as soon as we add an instance
+            for msg in dialog['thread']:
+                # print "\nmsg:", msg
+                # print "context:", context
+                # if begining of the converesation, just fill in the context
                 if len(context) == 0:
                     context.append(msg['text'])
-                    continue
-                # if the user talked: add message to context
+                    last_sender_id = msg['userId']
+
+                # if the human talked
                 if msg['userId'] == uid:
-                    if last_msg_is_from_user:
-                        context[-1] = context[-1]+' '+msg['text']
+                    c = copy.deepcopy(context)
+                    # human spoke twice in a row:
+                    if last_sender_id == msg['userId']:
+                        context[-1] = c[-1]+' '+msg['text']
                     else:
                         context.append(msg['text'])
-                    last_msg_is_from_user = True
-                # if the bot talked:
+                        last_sender_id = msg['userId']
+
+                # if the bot talked
                 else:
-                    # create (article, context, candidate, score, reward) instance
-                    score = score_map[int(msg['evaluation'])]
-                    formated_data.append({
-                        'article':article, 'context': context, 'candidate': msg['text'], 'r': score, 'R': full_eval
-                    })
-                    # add bot response to context now
-                    context.append(msg['text'])
-                    last_msg_is_from_user = False
+                    # the bot spoke twice in a row:
+                    if last_sender_id == msg['userId']:
+                        c = copy.deepcopy(context)
+                        m = copy.deepcopy(msg)
+                        prev_candidate = c[-1]  # save previous turn
+                        context = c[:-1]        # remove last turn from context
+                        if added_instances_from_this_chat:  # replace last instance by most recent
+                            r_prev = formated_data[-1]['r']
+                            r_new = min(max(r_prev + score_map[int(m['evaluation'])], -1), 1)  # sum evaluations of the two msg [-1,+1]
+                            formated_data[-1] = {
+                                'article': article,
+                                'context': copy.deepcopy(context),
+                                'candidate': prev_candidate+' '+m['text'],  # include last turn in this turn
+                                'r': r_new,
+                                'R': full_eval,
+                                'policy': m['policy'],
+                                'model': m['model']
+                            }
+                        # add bot response to context now
+                        context.append(prev_candidate+' '+m['text'])
+                    # bot replied to human:
+                    else:
+                        c = copy.deepcopy(context)
+                        m = copy.deepcopy(msg)
+                        if (not voted_only) or (voted_only and score_map[int(m['evaluation'])] != 0):
+                            # create new instance
+                            formated_data.append({
+                                'article': article,
+                                'context': c,
+                                'candidate': m['text'],
+                                'r': score_map[int(m['evaluation'])],
+                                'R': full_eval,
+                                'policy': m['policy'],
+                                'model': m['model']
+                            })
+                            added_instances_from_this_chat = True
+                        # add bot response to context now
+                        context.append(m['text'])
+                        last_sender_id = m['userId']
 
     return formated_data
 
@@ -154,19 +204,22 @@ def main():
     args = parser.parse_args()
     print args
 
-    print "\nGet json data from database..."
+    print "\nGet conversations from database..."
     json_data = query_db()
     print "Got %d dialogues" % len(json_data)
 
-    print json_data[0]
+    # print '\n', json_data[0]
 
     # extract array of dictionaries of the form {'article':<str>, 'context':<list of str>, 'candidate':<str>, 'r':<-1,0,1>, 'R':<0-5>}
     print "\nReformat dialogues into list of training examples..."
-    full_data = reformat(json_data)
+    full_data = reformat(json_data, args.voted_only)
     print "Got %d examples" % len(full_data)
-    
+
+    # print '\n', json.dumps(full_data[:5], indent=4, sort_keys=True)
+
     print "\nSaving to pkl file..."
-    with open('full_data_%s.pkl' % str(time.time()), 'wb') as handle:
+    file_prefix = "voted" if args.voted_only else "full"
+    with open('%s_data_db_%s.pkl' % (file_prefix, str(time.time())), 'wb') as handle:
         pkl.dump(full_data, handle, protocol=pkl.HIGHEST_PROTOCOL)
     print "done."
 

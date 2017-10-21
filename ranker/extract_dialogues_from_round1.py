@@ -60,7 +60,7 @@ def reformat(json_data, voted_only=False):
             # Go through conversation to create a list of (article, context, candidate, score, reward, policy, model) instances
             context = []
             last_sender_id = None
-            added_instances_from_this_chat = False
+            added_instances_from_this_chat = False  # True as soon as we add an instance
             for msg in dialog['thread']:
                 # print "\nmsg:", msg
                 # print "context:", context
@@ -117,8 +117,8 @@ def reformat(json_data, voted_only=False):
                     if last_sender_id == msg['userId']:
                         c = copy.deepcopy(context)
                         m = copy.deepcopy(msg)
-                        prev_candidate = c[-1]        # save previous turn
-                        context = c[:-1]              # remove last turn from context
+                        prev_candidate = c[-1]  # save previous turn
+                        context = c[:-1]        # remove last turn from context
                         if added_instances_from_this_chat:  # replace last instance by most recent
                             r_prev = formated_data[-1]['r']
                             r_new = min(max(r_prev + score_map[int(m['evaluation'])], -1), 1)  # sum evaluations of the two msg [-1,+1]
