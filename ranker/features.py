@@ -1,9 +1,11 @@
 from nltk.corpus import stopwords
+from nltk import ngrams, word_tokenize, sent_tokenize
 import numpy as np
 
 from embedding_metrics import w2v
 from embedding_metrics import greedy_score, extrema_score, average_score
 
+import spacy
 import logging
 logger = logging.getLogger(__name__)
 
@@ -546,6 +548,190 @@ class ExtremaScore_CandidateKUser_noStop(Feature):
             logger.debug("last %d user turns: %s" % (self.k, content))
             self.feat = float(extrema_score(candidate, content))
 
+class BigramOverlap(Feature):
+    def __init__(self, article=None, context=None, candidate=None):
+        super(BigramOverlap, self).__init__(1, article, context, candidate)
+        self.set(article, context, candidate)
+
+    def set(self, article, context, candidate):
+        """
+         0 / 1 indicating if response has at least one bigram overlapping with:
+        the previous user turn (binary feature size: 1) -- for f_pi(a, h, i) and g_phi(a, h, i)
+        any previous turn (binary feature size: 1) -- for f_pi(a, h, i)
+        """
+
+        if candidate is None or context is None:
+            self.feat = None
+        else:
+            content = np.array(context)
+            last_response = content[-1]
+            content = ' '.join(content)
+            response_bigrams = set(['-'.join(grams) for grams in ngrams(word_tokenize(candidate.lower()),2)])
+            last_response_bigrams = set(['-'.join(grams) for grams in ngrams(word_tokenize(last_response.lower()), 2)])
+            content_bigrams = set(['-'.join(grams) for grams in ngrams(word_tokenize(content.lower()), 2)])
+
+            self.feat = np.zeros(2)
+            if len(last_response_bigrams.intersection(response_bigrams)) > 0:
+                self.feat[0] = 1
+            if len(content_bigrams.intersection(response_bigrams)) > 0:
+                self.feat[1] = 1
+
+class TrigramOverlap(Feature):
+    def __init__(self, article=None, context=None, candidate=None):
+        super(TrigramOverlap, self).__init__(1, article, context, candidate)
+        self.set(article, context, candidate)
+
+    def set(self, article, context, candidate):
+        """
+         0 / 1 indicating if response has at least one trigram overlapping with:
+        the previous user turn (binary feature size: 1) -- for f_pi(a, h, i) and g_phi(a, h, i)
+        any previous turn (binary feature size: 1) -- for f_pi(a, h, i)
+        the article (binary feature size: 1)
+        """
+
+        if candidate is None or context is None:
+            self.feat = None
+        else:
+            content = np.array(context)
+            last_response = content[-1]
+            content = ' '.join(content)
+            response_bigrams = set(['-'.join(grams) for grams in ngrams(word_tokenize(candidate.lower()),3)])
+            last_response_bigrams = set(['-'.join(grams) for grams in ngrams(word_tokenize(last_response.lower()), 3)])
+            content_bigrams = set(['-'.join(grams) for grams in ngrams(word_tokenize(content.lower()), 3)])
+            article_bigrams = set(['-'.join(grams) for grams in ngrams(word_tokenize(article.lower()), 3)])
+
+            self.feat = np.zeros(3)
+            if len(last_response_bigrams.intersection(response_bigrams)) > 0:
+                self.feat[0] = 1
+            if len(content_bigrams.intersection(response_bigrams)) > 0:
+                self.feat[1] = 1
+            if len(article_bigrams.intersection(response_bigrams)) > 0:
+                self.feat[2] = 1
+
+class EntityOverlap(Feature):
+    def __init__(self, article=None, context=None, candidate=None):
+        super(EntityOverlap, self).__init__(1, article, context, candidate)
+        self.nlp = spacy.load('en')
+        self.set(article, context, candidate)
+
+    def set(self, article, context, candidate):
+        """
+         0 / 1 indicating if response has at least one entity overlapping with:
+        the previous user turn (binary feature size: 1) -- for f_pi(a, h, i)
+        any previous turn (binary feature size: 1) -- for f_pi(a, h, i)
+        the article (binary feature size: 1) -- for f_pi(a, h, i) and g_phi(a, h, i)
+        """
+
+        if candidate is None or context is None:
+            self.feat = None
+        else:
+            content = np.array(context)
+            last_response = content[-1]
+            content = ' '.join(content)
+            content = self.nlp(unicode(content))
+            article = self.nlp(unicode(article))
+            candidate = self.nlp(unicode(candidate))
+            last_response = self.nlp(unicode(last_response))
+            content_entities = set([ent.label_ for ent in content.ents])
+            article_entities = set([ent.label_ for ent in article.ents])
+            candidate_entities = set([ent.label_ for ent in candidate.ents])
+            last_response_entities = set([ent.label_ for ent in last_response.ents])
+            self.feat = np.zeros(3)
+            if len(last_response_entities.intersection(candidate_entities)) > 0:
+                self.feat[0] = 1
+            if len(content_entities.intersection(candidate_entities)) > 0:
+                self.feat[1] = 1
+            if len(article_entities.intersection(candidate_entities)) > 0:
+                self.feat[2] = 1
+
+class WhWords(Feature):
+    def __init__(self, article=None, context=None, candidate=None):
+        super(WhWords, self).__init__(1, article, context, candidate)
+        self.set(article, context, candidate)
+
+    def set(self, article, context, candidate):
+        """
+         0 / 1 indicating if the turn has a word starting with "wh"
+        on the candidate response (scalar of size 1) -- for f_pi(a, h, i) and g_phi(a, h, i)
+        on the last user turn (scalar of size 1) -- for f_pi(a, h, i) and g_phi(a, h, i)
+        """
+
+        if candidate is None or context is None:
+            self.feat = None
+        else:
+            content = np.array(context)
+            last_response = content[-1]
+            candidate = word_tokenize(candidate.lower())
+            last_response = word_tokenize(last_response.lower())
+            wh_candidate = len([word for word in candidate if word.startswith('wh')])
+            wh_last = len([word for word in last_response if word.startswith('wh')])
+            self.feat = np.zeros(2)
+            if wh_candidate > 0:
+                self.feat[0] = 1
+            if wh_last > 0:
+                self.feat[1] = 1
+
+class DialogLength(Feature):
+    def __init__(self, article=None, context=None, candidate=None):
+        super(DialogLength, self).__init__(1, article, context, candidate)
+        self.set(article, context, candidate)
+
+    def set(self, article, context, candidate):
+        """
+         number of turns so far n, sqrt(n), log(n) (3 scalars: size 3) -- for g_phi(a, h, i)
+        """
+
+        if candidate is None or context is None:
+            self.feat = None
+        else:
+            content = np.array(context)
+            self.feat = np.zeros(3)
+            self.feat[0] = len(content)
+            self.feat[1] = np.sqrt(self.feat[0])
+            self.feat[2] = np.log(self.feat[0])
+
+
+class LastUserLength(Feature):
+    def __init__(self, article=None, context=None, candidate=None):
+        super(LastUserLength, self).__init__(1, article, context, candidate)
+        self.set(article, context, candidate)
+
+    def set(self, article, context, candidate):
+        """
+         number of words n, sqrt(n), log(n) (3 scalars: size 3) -- for g_phi(a, h, i)
+        """
+
+        if candidate is None or context is None:
+            self.feat = None
+        else:
+            content = np.array(context)
+            last_user_turn = content[-1]
+            self.feat = np.zeros(3)
+            self.feat[0] = len(word_tokenize(last_user_turn))
+            self.feat[1] = np.sqrt(self.feat[0])
+            self.feat[2] = np.log(self.feat[0])
+
+
+class ArticleLength(Feature):
+    def __init__(self, article=None, context=None, candidate=None):
+        super(LastUserLength, self).__init__(1, article, context, candidate)
+        self.set(article, context, candidate)
+
+    def set(self, article, context, candidate):
+        """
+         number of sentences in the article n, sqrt(n), log(n) (3 scalars: size 3) -- for g_phi(a, h, i)
+        """
+
+        if article is None:
+            self.feat = None
+        else:
+            article_sents = sent_tokenize(article)
+            self.feat = np.zeros(3)
+            self.feat[0] = len(article_sents)
+            self.feat[1] = np.sqrt(self.feat[0])
+            self.feat[2] = np.log(self.feat[0])
+
+
 
 # TODO: continue defining new features like embedding metrics, word overlap metrics, lookup for specific words, etc...
 # Make sure to explain new features very clearly and mention the number of dimensions it is (ie: the number of values it returns)
@@ -581,7 +767,8 @@ if __name__ == '__main__':
         'GreedyScore_CandidateLastK', 'AverageScore_CandidateLastK', 'ExtremaScore_CandidateLastK',
         'GreedyScore_CandidateLastK_noStop', 'AverageScore_CandidateLastK_noStop', 'ExtremaScore_CandidateLastK_noStop',
         'GreedyScore_CandidateKUser', 'AverageScore_CandidateKUser', 'ExtremaScore_CandidateKUser',
-        'GreedyScore_CandidateKUser_noStop', 'AverageScore_CandidateKUser_noStop', 'ExtremaScore_CandidateKUser_noStop']
+        'GreedyScore_CandidateKUser_noStop', 'AverageScore_CandidateKUser_noStop', 'ExtremaScore_CandidateKUser_noStop',
+        'EntityOverlap','BigramOverlap','TrigramOverlap','WhWords','DialogLength','LastUserLength','ArticleLength']
 
     for feature in features:
         logger.info("class: %s" % feature)
