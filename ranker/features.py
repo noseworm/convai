@@ -550,7 +550,7 @@ class ExtremaScore_CandidateKUser_noStop(Feature):
 
 class BigramOverlap(Feature):
     def __init__(self, article=None, context=None, candidate=None):
-        super(BigramOverlap, self).__init__(1, article, context, candidate)
+        super(BigramOverlap, self).__init__(2, article, context, candidate)
         self.set(article, context, candidate)
 
     def set(self, article, context, candidate):
@@ -578,7 +578,7 @@ class BigramOverlap(Feature):
 
 class TrigramOverlap(Feature):
     def __init__(self, article=None, context=None, candidate=None):
-        super(TrigramOverlap, self).__init__(1, article, context, candidate)
+        super(TrigramOverlap, self).__init__(3, article, context, candidate)
         self.set(article, context, candidate)
 
     def set(self, article, context, candidate):
@@ -589,7 +589,7 @@ class TrigramOverlap(Feature):
         the article (binary feature size: 1)
         """
 
-        if candidate is None or context is None:
+        if candidate is None or context is None or article is None:
             self.feat = None
         else:
             content = np.array(context)
@@ -610,7 +610,7 @@ class TrigramOverlap(Feature):
 
 class EntityOverlap(Feature):
     def __init__(self, article=None, context=None, candidate=None):
-        super(EntityOverlap, self).__init__(1, article, context, candidate)
+        super(EntityOverlap, self).__init__(3, article, context, candidate)
         self.nlp = spacy.load('en')
         self.set(article, context, candidate)
 
@@ -622,7 +622,7 @@ class EntityOverlap(Feature):
         the article (binary feature size: 1) -- for f_pi(a, h, i) and g_phi(a, h, i)
         """
 
-        if candidate is None or context is None:
+        if candidate is None or context is None or article is None:
             self.feat = None
         else:
             content = np.array(context)
@@ -646,7 +646,7 @@ class EntityOverlap(Feature):
 
 class WhWords(Feature):
     def __init__(self, article=None, context=None, candidate=None):
-        super(WhWords, self).__init__(1, article, context, candidate)
+        super(WhWords, self).__init__(2, article, context, candidate)
         self.set(article, context, candidate)
 
     def set(self, article, context, candidate):
@@ -673,7 +673,7 @@ class WhWords(Feature):
 
 class DialogLength(Feature):
     def __init__(self, article=None, context=None, candidate=None):
-        super(DialogLength, self).__init__(1, article, context, candidate)
+        super(DialogLength, self).__init__(3, article, context, candidate)
         self.set(article, context, candidate)
 
     def set(self, article, context, candidate):
@@ -681,7 +681,7 @@ class DialogLength(Feature):
          number of turns so far n, sqrt(n), log(n) (3 scalars: size 3) -- for g_phi(a, h, i)
         """
 
-        if candidate is None or context is None:
+        if context is None:
             self.feat = None
         else:
             content = np.array(context)
@@ -693,7 +693,7 @@ class DialogLength(Feature):
 
 class LastUserLength(Feature):
     def __init__(self, article=None, context=None, candidate=None):
-        super(LastUserLength, self).__init__(1, article, context, candidate)
+        super(LastUserLength, self).__init__(3, article, context, candidate)
         self.set(article, context, candidate)
 
     def set(self, article, context, candidate):
@@ -701,7 +701,7 @@ class LastUserLength(Feature):
          number of words n, sqrt(n), log(n) (3 scalars: size 3) -- for g_phi(a, h, i)
         """
 
-        if candidate is None or context is None:
+        if context is None:
             self.feat = None
         else:
             content = np.array(context)
@@ -714,7 +714,7 @@ class LastUserLength(Feature):
 
 class ArticleLength(Feature):
     def __init__(self, article=None, context=None, candidate=None):
-        super(LastUserLength, self).__init__(1, article, context, candidate)
+        super(LastUserLength, self).__init__(3, article, context, candidate)
         self.set(article, context, candidate)
 
     def set(self, article, context, candidate):
