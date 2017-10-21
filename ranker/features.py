@@ -70,43 +70,6 @@ class Feature(object):
 ### SPECIFIC SUB-CLASSES ###
 ############################
 
-
-### Length ###
-
-class CandidateLength(Feature):
-
-    def __init__(self, article=None, context=None, candidate=None):
-        # Constructor: call super class constructor with dim=1
-        super(CandidateLength, self).__init__(1, article, context, candidate)
-        self.set(article, context, candidate)
-
-    def set(self, article, context, candidate):
-        """
-        set feature attribure to float scalar (dim: 1) for the length of the candidate response
-        """
-        if candidate is None:
-            self.feat = None
-        else:
-            self.feat = float(len(candidate.strip().split()))
-
-
-class UserLength(Feature):
-
-    def __init__(self, article=None, context=None, candidate=None):
-        # Constructor: call super class constructor with dim=1
-        super(UserLength, self).__init__(1, article, context, candidate)
-        self.set(article, context, candidate)
-
-    def set(self, article, context, candidate):
-        """
-        set feature attribute to float scalar (dim: 1) for the length of the previous user utterance
-        """
-        if context is None:
-            self.feat = None
-        else:
-            self.feat = float(len(context[-1].strip().split()))
-
-
 ### Average embedding ###
 
 class AverageWordEmbedding_Candidate(Feature):
@@ -548,6 +511,17 @@ class ExtremaScore_CandidateKUser_noStop(Feature):
             logger.debug("last %d user turns: %s" % (self.k, content))
             self.feat = float(extrema_score(candidate, content))
 
+
+### Candidate -- article match ###
+
+
+
+### Candidate -- article without stop words match ###
+
+
+
+### n-gram & entity overlaps ###
+
 class BigramOverlap(Feature):
     def __init__(self, article=None, context=None, candidate=None):
         super(BigramOverlap, self).__init__(2, article, context, candidate)
@@ -644,6 +618,9 @@ class EntityOverlap(Feature):
             if len(article_entities.intersection(candidate_entities)) > 0:
                 self.feat[2] = 1
 
+
+### word presence ###
+
 class WhWords(Feature):
     def __init__(self, article=None, context=None, candidate=None):
         super(WhWords, self).__init__(2, article, context, candidate)
@@ -670,6 +647,9 @@ class WhWords(Feature):
                 self.feat[0] = 1
             if wh_last > 0:
                 self.feat[1] = 1
+
+
+### length ###
 
 class DialogLength(Feature):
     def __init__(self, article=None, context=None, candidate=None):
@@ -708,6 +688,24 @@ class LastUserLength(Feature):
             last_user_turn = content[-1]
             self.feat = np.zeros(3)
             self.feat[0] = len(word_tokenize(last_user_turn))
+            self.feat[1] = np.sqrt(self.feat[0])
+            self.feat[2] = np.log(self.feat[0])
+
+
+class CandidateLength(Feature):
+    def __init__(self, article=None, context=None, candidate=None):
+        super(CandidateLength, self).__init__(3, article, context, candidate)
+        self.set(article, context, candidate)
+
+    def set(self, article, context, candidate):
+        """
+        number of words n, sqrt(n), log(n) (3 scalars: dim 3)
+        """
+        if candidate is None:
+            self.feat = None
+        else:
+            self.feat = np.zeros(3)
+            self.feat[0] = float(len(word_tokenize(candidate)))
             self.feat[1] = np.sqrt(self.feat[0])
             self.feat[2] = np.log(self.feat[0])
 
@@ -761,14 +759,15 @@ if __name__ == '__main__':
     candidate2 = "ha ha ha"
     candidate3 = "i like facebook"
 
-    features = ['CandidateLength', 'UserLength',
+    features = [
         'AverageWordEmbedding_Candidate', 'AverageWordEmbedding_User', 'AverageWordEmbedding_LastK', 'AverageWordEmbedding_kUser', 'AverageWordEmbedding_Article',
         'GreedyScore_CandidateUser', 'AverageScore_CandidateUser', 'ExtremaScore_CandidateUser',
         'GreedyScore_CandidateLastK', 'AverageScore_CandidateLastK', 'ExtremaScore_CandidateLastK',
         'GreedyScore_CandidateLastK_noStop', 'AverageScore_CandidateLastK_noStop', 'ExtremaScore_CandidateLastK_noStop',
         'GreedyScore_CandidateKUser', 'AverageScore_CandidateKUser', 'ExtremaScore_CandidateKUser',
         'GreedyScore_CandidateKUser_noStop', 'AverageScore_CandidateKUser_noStop', 'ExtremaScore_CandidateKUser_noStop',
-        'EntityOverlap','BigramOverlap','TrigramOverlap','WhWords','DialogLength','LastUserLength','ArticleLength']
+        'EntityOverlap','BigramOverlap','TrigramOverlap','WhWords','DialogLength','LastUserLength','ArticleLength','CandidateLength'
+    ]
 
     for feature in features:
         logger.info("class: %s" % feature)
