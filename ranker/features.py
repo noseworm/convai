@@ -1,6 +1,7 @@
 from nltk.corpus import stopwords
 from nltk import ngrams, word_tokenize, sent_tokenize
 import numpy as np
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 from embedding_metrics import w2v
 from embedding_metrics import greedy_score, extrema_score, average_score
@@ -729,6 +730,163 @@ class ArticleLength(Feature):
             self.feat[1] = np.sqrt(self.feat[0])
             self.feat[2] = np.log(self.feat[0])
 
+
+class IntensifierWords(Feature):
+    def __init__(self, article=None, context=None, candidate=None):
+        super(IntensifierWords, self).__init__(4, article, context, candidate)
+        self.intensifier_list = []
+        with open('../data/intensifier_list.txt') as fp:
+            for line in fp:
+                self.intensifier_list.append(line.strip())
+        self.set(article, context, candidate)
+
+    def count(self, text):
+        counter = 0
+        for phrase in self.intensifier_list:
+            if phrase in text:
+                counter +=1
+        return counter
+
+    def set(self, article, context, candidate):
+        """
+         4 features:
+         1: candidate - boolean value if the candidate response contains any words from the list
+         2: candidate - float percentage of words which are flagged in the intensifier list
+         3: last response - boolean value if the candidate response contains any words from the list
+         4: last response - float percentage of words which are flagged in the intensifier list
+        """
+
+        if candidate is None or context is None:
+            self.feat = None
+        else:
+            content = np.array(context)
+            last_response = content[-1]
+            last_response_intensifier_words_count = self.count(last_response)
+            candidate_intensifier_words_count = self.count(candidate)
+            self.feat = np.zeros(4)
+            if candidate_intensifier_words_count > 0:
+                self.feat[0] = 1
+            if last_response_intensifier_words_count > 0:
+                self.feat[2] = 1
+            self.feat[1] = (1.0 * candidate_intensifier_words_count) / len(word_tokenize(candidate))
+            self.feat[3] = (1.0 * last_response_intensifier_words_count) / len(word_tokenize(last_response))
+
+
+class ConfusionWords(Feature):
+    def __init__(self, article=None, context=None, candidate=None):
+        super(ConfusionWords, self).__init__(4, article, context, candidate)
+        self.confusion_list = []
+        with open('../data/confusion_list.txt') as fp:
+            for line in fp:
+                self.confusion_list.append(line.strip())
+        self.set(article, context, candidate)
+
+    def count(self, text):
+        counter = 0
+        for phrase in self.confusion_list:
+            if phrase in text:
+                counter +=1
+        return counter
+
+    def set(self, article, context, candidate):
+        """
+         4 features:
+         1: candidate - boolean value if the candidate response contains any words from the list
+         2: candidate - float percentage of words which are flagged in the confusion list
+         3: last response - boolean value if the candidate response contains any words from the list
+         4: last response - float percentage of words which are flagged in the confusion list
+        """
+
+        if candidate is None or context is None:
+            self.feat = None
+        else:
+            content = np.array(context)
+            last_response = content[-1]
+            last_response_confusion_words_count = self.count(last_response)
+            candidate_confusion_words_count = self.count(candidate)
+            self.feat = np.zeros(4)
+            if candidate_confusion_words_count > 0:
+                self.feat[0] = 1
+            if last_response_confusion_words_count > 0:
+                self.feat[2] = 1
+            self.feat[1] = (1.0 * candidate_confusion_words_count) / len(word_tokenize(candidate))
+            self.feat[3] = (1.0 * last_response_confusion_words_count) / len(word_tokenize(last_response))
+
+
+class ProfanityWords(Feature):
+    def __init__(self, article=None, context=None, candidate=None):
+        super(ProfanityWords, self).__init__(4, article, context, candidate)
+        self.profanity_list = []
+        with open('../data/profanity_list.txt') as fp:
+            for line in fp:
+                self.profanity_list.append(line.strip())
+        self.set(article, context, candidate)
+
+    def count(self, text):
+        counter = 0
+        for phrase in self.profanity_list:
+            if phrase in text:
+                counter +=1
+        return counter
+
+    def set(self, article, context, candidate):
+        """
+         4 features:
+         1: candidate - boolean value if the candidate response contains any words from the list
+         2: candidate - float percentage of words which are flagged in the profanity list
+         3: last response - boolean value if the candidate response contains any words from the list
+         4: last response - float percentage of words which are flagged in the profanity list
+        """
+
+        if candidate is None or context is None:
+            self.feat = None
+        else:
+            content = np.array(context)
+            last_response = content[-1]
+            last_response_hate_words_count = self.count(last_response)
+            candidate_hate_words_count = self.count(candidate)
+            self.feat = np.zeros(4)
+            if candidate_hate_words_count > 0:
+                self.feat[0] = 1
+            if last_response_hate_words_count > 0:
+                self.feat[2] = 1
+            self.feat[1] = (1.0 * candidate_hate_words_count) / len(word_tokenize(candidate))
+            self.feat[3] = (1.0 * last_response_hate_words_count) / len(word_tokenize(last_response))
+
+class SentimentScore(Feature):
+    def __init__(self, article=None, context=None, candidate=None):
+        super(SentimentScore, self).__init__(2, article, context, candidate)
+        self.analyzer = SentimentIntensityAnalyzer()
+        self.set(article, context, candidate)
+
+
+    def set(self, article, context, candidate):
+        """
+         3 features:
+         1: one hot vector for candidate to be positive, negative or neutral
+         2: one hot vector for last user turn to be positive, negative or neutral
+        """
+
+        if candidate is None or context is None:
+            self.feat = None
+        else:
+            content = np.array(context)
+            last_response = content[-1]
+            candidate_vs = self.analyzer.polarity_scores(candidate)
+            last_response_vs = self.analyzer.polarity_scores(last_response)
+            self.feat = [np.zeros(3), np.zeros(3)]
+            if candidate_vs['compound'] >= 0.5: # positive
+                self.feat[0][0] = 1
+            elif candidate_vs['compound'] <= -0.5: # negative
+                self.feat[0][1] = 1
+            else:
+                self.feat[0][2] = 1 # neutral
+            if last_response_vs['compound'] >= 0.5: # positive
+                self.feat[1][0] = 1
+            elif last_response_vs['compound'] <= -0.5: # negative
+                self.feat[1][1] = 1
+            else:
+                self.feat[1][2] = 1 # neutral
 
 
 # TODO: continue defining new features like embedding metrics, word overlap metrics, lookup for specific words, etc...
