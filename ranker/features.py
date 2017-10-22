@@ -208,7 +208,7 @@ class GreedyScore_CandidateUser(Feature):
         else:
             res1 = greedy_score(candidate, context[-1])
             res2 = greedy_score(context[-1], candidate)
-            self.feat = (res1 + res2) / 2.0
+            self.feat = [(res1 + res2) / 2.0]
 
 
 class AverageScore_CandidateUser(Feature):
@@ -225,7 +225,7 @@ class AverageScore_CandidateUser(Feature):
         if candidate is None or context is None:
             self.feat = None
         else:
-            self.feat = float(average_score(candidate, context[-1]))
+            self.feat = [float(average_score(candidate, context[-1]))]
 
 
 class ExtremaScore_CandidateUser(Feature):
@@ -242,7 +242,7 @@ class ExtremaScore_CandidateUser(Feature):
         if candidate is None or context is None:
             self.feat = None
         else:
-            self.feat = float(extrema_score(candidate, context[-1]))
+            self.feat = [float(extrema_score(candidate, context[-1]))]
 
 
 ### Candidate -- last k turns match ###
@@ -266,7 +266,7 @@ class GreedyScore_CandidateLastK(Feature):
             logger.debug("last %d turns: %s" % (self.k, content))
             res1 = greedy_score(candidate, content)
             res2 = greedy_score(content, candidate)
-            self.feat = (res1 + res2) / 2.0
+            self.feat = [(res1 + res2) / 2.0]
 
 
 class AverageScore_CandidateLastK(Feature):
@@ -286,7 +286,7 @@ class AverageScore_CandidateLastK(Feature):
         else:
             content = ' '.join(context[-self.k:])
             logger.debug("last %d turns: %s" % (self.k, content))
-            self.feat = float(average_score(candidate, content))
+            self.feat = [float(average_score(candidate, content))]
 
 
 class ExtremaScore_CandidateLastK(Feature):
@@ -306,7 +306,7 @@ class ExtremaScore_CandidateLastK(Feature):
         else:
             content = ' '.join(context[-self.k:])
             logger.debug("last %d turns: %s" % (self.k, content))
-            self.feat = float(extrema_score(candidate, content))
+            self.feat = [float(extrema_score(candidate, content))]
 
 
 ### Candidate -- last k turns without stop words match ###
@@ -331,7 +331,7 @@ class GreedyScore_CandidateLastK_noStop(Feature):
             logger.debug("last %d turns: %s" % (self.k, content))
             res1 = greedy_score(candidate, content)
             res2 = greedy_score(content, candidate)
-            self.feat = (res1 + res2) / 2.0
+            self.feat = [(res1 + res2) / 2.0]
 
 
 class AverageScore_CandidateLastK_noStop(Feature):
@@ -352,7 +352,7 @@ class AverageScore_CandidateLastK_noStop(Feature):
             content = ' '.join(context[-self.k:])
             content = ' '.join(filter(lambda word: word not in stop, content.strip().split()))
             logger.debug("last %d turns: %s" % (self.k, content))
-            self.feat = float(average_score(candidate, content))
+            self.feat = [float(average_score(candidate, content))]
 
 
 class ExtremaScore_CandidateLastK_noStop(Feature):
@@ -373,7 +373,7 @@ class ExtremaScore_CandidateLastK_noStop(Feature):
             content = ' '.join(context[-self.k:])
             content = ' '.join(filter(lambda word: word not in stop, content.strip().split()))
             logger.debug("last %d turns: %s" % (self.k, content))
-            self.feat = float(extrema_score(candidate, content))
+            self.feat = [float(extrema_score(candidate, content))]
 
 
 ### Candidate -- last k user turns match ###
@@ -398,7 +398,7 @@ class GreedyScore_CandidateKUser(Feature):
             logger.debug("last %d user turns: %s" % (self.k, content))
             res1 = greedy_score(candidate, content)
             res2 = greedy_score(content, candidate)
-            self.feat = (res1 + res2) / 2.0
+            self.feat = [(res1 + res2) / 2.0]
 
 
 class AverageScore_CandidateKUser(Feature):
@@ -419,7 +419,7 @@ class AverageScore_CandidateKUser(Feature):
             content = np.array(context)[range(-2*self.k+1, 0, 2)]
             content = ' '.join(content)
             logger.debug("last %d user turns: %s" % (self.k, content))
-            self.feat = float(average_score(candidate, content))
+            self.feat = [float(average_score(candidate, content))]
 
 
 class ExtremaScore_CandidateKUser(Feature):
@@ -440,7 +440,7 @@ class ExtremaScore_CandidateKUser(Feature):
             content = np.array(context)[range(-2*self.k+1, 0, 2)]
             content = ' '.join(content)
             logger.debug("last %d user turns: %s" % (self.k, content))
-            self.feat = float(extrema_score(candidate, content))
+            self.feat = [float(extrema_score(candidate, content))]
 
 
 ### Candidate -- last k user turns without stop words match ###
@@ -466,7 +466,7 @@ class GreedyScore_CandidateKUser_noStop(Feature):
             logger.debug("last %d user turns: %s" % (self.k, content))
             res1 = greedy_score(candidate, content)
             res2 = greedy_score(content, candidate)
-            self.feat = (res1 + res2) / 2.0
+            self.feat = [(res1 + res2) / 2.0]
 
 
 class AverageScore_CandidateKUser_noStop(Feature):
@@ -488,7 +488,7 @@ class AverageScore_CandidateKUser_noStop(Feature):
             content = ' '.join(content)
             content = ' '.join(filter(lambda word: word not in stop, content.strip().split()))
             logger.debug("last %d user turns: %s" % (self.k, content))
-            self.feat = float(average_score(candidate, content))
+            self.feat = [float(average_score(candidate, content))]
 
 
 class ExtremaScore_CandidateKUser_noStop(Feature):
@@ -510,7 +510,7 @@ class ExtremaScore_CandidateKUser_noStop(Feature):
             content = ' '.join(content)
             content = ' '.join(filter(lambda word: word not in stop, content.strip().split()))
             logger.debug("last %d user turns: %s" % (self.k, content))
-            self.feat = float(extrema_score(candidate, content))
+            self.feat = [float(extrema_score(candidate, content))]
 
 
 ### Candidate -- article match ###
@@ -853,40 +853,52 @@ class ProfanityWords(Feature):
             self.feat[1] = (1.0 * candidate_hate_words_count) / len(word_tokenize(candidate))
             self.feat[3] = (1.0 * last_response_hate_words_count) / len(word_tokenize(last_response))
 
-class SentimentScore(Feature):
+class SentimentScoreCandidate(Feature):
     def __init__(self, article=None, context=None, candidate=None):
-        super(SentimentScore, self).__init__(2, article, context, candidate)
+        super(SentimentScoreCandidate, self).__init__(3, article, context, candidate)
         self.analyzer = SentimentIntensityAnalyzer()
         self.set(article, context, candidate)
 
+    def set(self, article, context, candidate):
+        """
+         3 features: one hot vector for candidate to be positive, negative or neutral
+        """
+        if candidate is None:
+            self.feat = None
+        else:
+            candidate_vs = self.analyzer.polarity_scores(candidate)
+            self.feat = np.zeros(3)
+            if candidate_vs['compound'] >= 0.5: # positive
+                self.feat[0] = 1
+            elif candidate_vs['compound'] <= -0.5: # negative
+                self.feat[1] = 1
+            else:
+                self.feat[2] = 1 # neutral
+
+class SentimentScoreLastUser(Feature):
+    def __init__(self, article=None, context=None, candidate=None):
+        super(SentimentScoreLastUser, self).__init__(3, article, context, candidate)
+        self.analyzer = SentimentIntensityAnalyzer()
+        self.set(article, context, candidate)
 
     def set(self, article, context, candidate):
         """
-         3 features:
-         1: one hot vector for candidate to be positive, negative or neutral
-         2: one hot vector for last user turn to be positive, negative or neutral
+         3 features: one hot vector for last user turn to be positive, negative or neutral
         """
 
-        if candidate is None or context is None:
+        if context is None:
             self.feat = None
         else:
             content = np.array(context)
             last_response = content[-1]
-            candidate_vs = self.analyzer.polarity_scores(candidate)
             last_response_vs = self.analyzer.polarity_scores(last_response)
-            self.feat = [np.zeros(3), np.zeros(3)]
-            if candidate_vs['compound'] >= 0.5: # positive
-                self.feat[0][0] = 1
-            elif candidate_vs['compound'] <= -0.5: # negative
-                self.feat[0][1] = 1
-            else:
-                self.feat[0][2] = 1 # neutral
+            self.feat = np.zeros(3)
             if last_response_vs['compound'] >= 0.5: # positive
-                self.feat[1][0] = 1
+                self.feat[0] = 1
             elif last_response_vs['compound'] <= -0.5: # negative
-                self.feat[1][1] = 1
+                self.feat[1] = 1
             else:
-                self.feat[1][2] = 1 # neutral
+                self.feat[2] = 1 # neutral
 
 
 # TODO: continue defining new features like embedding metrics, word overlap metrics, lookup for specific words, etc...
