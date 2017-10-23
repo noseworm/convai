@@ -192,7 +192,7 @@ def reformat(json_data, voted_only=False):
                             })
                             added_instances_from_this_chat = True
                         # add bot response to context now
-                        context.append(m['text'].strip.lower())
+                        context.append(m['text'].strip().lower())
                         last_sender_id = m['userId']
 
     if voted_only:  # filter out messages here again

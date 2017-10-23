@@ -83,7 +83,7 @@ def reformat(json_data, voted_only=False):
                             formated_data[-1] = {
                                 'article': article,
                                 'context': copy.deepcopy(context),
-                                'candidate': prev_candidate+' '+m['text'].strip.lower(),  # include last turn in this turn
+                                'candidate': prev_candidate+' '+m['text'].strip().lower(),  # include last turn in this turn
                                 'r': r_new,
                                 'R': full_evals[m['userId']],
                                 'policy': -1,
