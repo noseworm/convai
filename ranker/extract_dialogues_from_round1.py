@@ -48,7 +48,7 @@ def reformat(json_data, voted_only=False):
         if valid_chat(dialog['thread'], k=2):
             # print json.dumps(dialog, indent=4, sort_keys=True)
             # get article text for that conversation
-            article = dialog['context']
+            article = dialog['context'].strip().lower()
             # get evaluations for that conversation from all humans involved
             full_evals = defaultdict(float)
             for evl in dialog['evaluation']:
@@ -66,7 +66,7 @@ def reformat(json_data, voted_only=False):
                 # print "context:", context
                 # if begining of the converesation, just fill in the context
                 if len(context) == 0:
-                    context.append(msg['text'])
+                    context.append(msg['text'].strip().lower())
                     last_sender_id = msg['userId']
 
                 # if both human: create an instance for all messages and add each message to context
@@ -83,14 +83,14 @@ def reformat(json_data, voted_only=False):
                             formated_data[-1] = {
                                 'article': article,
                                 'context': copy.deepcopy(context),
-                                'candidate': prev_candidate+' '+m['text'],  # include last turn in this turn
+                                'candidate': prev_candidate+' '+m['text'].strip.lower(),  # include last turn in this turn
                                 'r': r_new,
                                 'R': full_evals[m['userId']],
                                 'policy': -1,
                                 'model': 'human_from_round1'
                             }
                         # add human response to context now
-                        context.append(prev_candidate+' '+m['text'])
+                        context.append(prev_candidate+' '+m['text'].strip().lower())
                     # other human replied to this human:
                     else:
                         c = copy.deepcopy(context)
@@ -100,7 +100,7 @@ def reformat(json_data, voted_only=False):
                             formated_data.append({
                                 'article': article,
                                 'context': c,
-                                'candidate': m['text'],
+                                'candidate': m['text'].strip().lower(),
                                 'r': score_map[int(m['evaluation'])],
                                 'R': full_evals[m['userId']],
                                 'policy': -1,
@@ -108,7 +108,7 @@ def reformat(json_data, voted_only=False):
                             })
                             added_instances_from_this_chat = True
                         # add human response to context now
-                        context.append(m['text'])
+                        context.append(m['text'].strip().lower())
                         last_sender_id = m['userId']
 
                 # if the bot talked
@@ -125,14 +125,14 @@ def reformat(json_data, voted_only=False):
                             formated_data[-1] = {
                                 'article': article,
                                 'context': copy.deepcopy(context),
-                                'candidate': prev_candidate+' '+m['text'],  # include last turn in this turn
+                                'candidate': prev_candidate+' '+m['text'].strip().lower(),  # include last turn in this turn
                                 'r': r_new,
                                 'R': full_evals[m['userId']],
                                 'policy': -1,
                                 'model': 'bot_from_round1'
                             }
                         # add bot response to context now
-                        context.append(prev_candidate+' '+m['text'])
+                        context.append(prev_candidate+' '+m['text'].strip().lower())
                     # bot replied to human:
                     else:
                         c = copy.deepcopy(context)
@@ -142,7 +142,7 @@ def reformat(json_data, voted_only=False):
                             formated_data.append({
                                 'article': article,
                                 'context': c,
-                                'candidate': m['text'],
+                                'candidate': m['text'].strip().lower(),
                                 'r': score_map[int(m['evaluation'])],
                                 'R': full_evals[m['userId']],
                                 'policy': -1,
@@ -150,7 +150,7 @@ def reformat(json_data, voted_only=False):
                             })
                             added_instances_from_this_chat = True
                         # add bot response to context now
-                        context.append(m['text'])
+                        context.append(m['text'].strip().lower())
                         last_sender_id = m['userId']
 
                 # if the (lonly) human talked
@@ -158,12 +158,17 @@ def reformat(json_data, voted_only=False):
                     c = copy.deepcopy(context)
                     # same human spoke twice in a row:
                     if last_sender_id == msg['userId']:
-                        context[-1] = c[-1]+' '+msg['text']
+                        context[-1] = c[-1]+' '+msg['text'].strip().lower()
                     else:
-                        context.append(msg['text'])
+                        context.append(msg['text'].strip().lower())
                         last_sender_id = msg['userId']
 
                 # print json.dumps(formated_data, indent=4, sort_keys=True)
+
+    if voted_only:  # filter out messages here again
+        # sometimes msg[r] is still 0 because msg[candidate] is composed of two msgs:
+        #  one with +1, the other with -1, summing to 0
+        formated_data = filter(lambda msg: msg['r'] != 0, formated_data)
 
     return formated_data
 
