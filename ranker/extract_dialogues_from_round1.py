@@ -62,8 +62,10 @@ def reformat(json_data, voted_only=False):
             last_sender_id = None
             added_instances_from_this_chat = False  # True as soon as we add an instance
             for msg in dialog['thread']:
-                # print "\nmsg:", msg
-                # print "context:", context
+                # skip empty messages
+                if len(msg['text'].strip().split()) == 0:
+                    continue
+
                 # if begining of the converesation, just fill in the context
                 if len(context) == 0:
                     context.append(msg['text'].strip().lower())
