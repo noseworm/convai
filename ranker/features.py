@@ -91,7 +91,8 @@ class AverageWordEmbedding_Candidate(Feature):
             for tok in candidate.strip().split():
                 if tok in w2v:
                     X += w2v[tok]
-            X = np.array(X)/np.linalg.norm(X)
+            if np.linalg.norm(X) > 0.00000000001:
+                X = np.array(X)/np.linalg.norm(X)
             self.feat = X
 
 
@@ -113,7 +114,8 @@ class AverageWordEmbedding_User(Feature):
             for tok in context[-1].strip().split():
                 if tok in w2v:
                     X += w2v[tok]
-            X = np.array(X)/np.linalg.norm(X)
+            if np.linalg.norm(X) > 0.00000000001:
+                X = np.array(X)/np.linalg.norm(X)
             self.feat = X
 
 
@@ -138,7 +140,8 @@ class AverageWordEmbedding_LastK(Feature):
             for tok in content.strip().split():
                 if tok in w2v:
                     X += w2v[tok]
-            X = np.array(X)/np.linalg.norm(X)
+            if np.linalg.norm(X) > 0.00000000001:
+                X = np.array(X)/np.linalg.norm(X)
             self.feat = X
 
 
@@ -164,7 +167,8 @@ class AverageWordEmbedding_kUser(Feature):
             for tok in content.strip().split():
                 if tok in w2v:
                     X += w2v[tok]
-            X = np.array(X)/np.linalg.norm(X)
+            if np.linalg.norm(X) > 0.00000000001:
+                X = np.array(X)/np.linalg.norm(X)
             self.feat = X
 
 
@@ -186,7 +190,8 @@ class AverageWordEmbedding_Article(Feature):
             for tok in article.strip().split():
                 if tok in w2v:
                     X += w2v[tok]
-            X = np.array(X)/np.linalg.norm(X)
+            if np.linalg.norm(X) > 0.00000000001:
+                X = np.array(X)/np.linalg.norm(X)
             self.feat = X
 
 
@@ -669,7 +674,11 @@ class DialogLength(Feature):
             self.feat = np.zeros(3)
             self.feat[0] = len(content)
             self.feat[1] = np.sqrt(self.feat[0])
-            self.feat[2] = np.log(self.feat[0])
+            if self.feat[0] == 0:
+                print "Warning: number of turns in context is zero: `%s`" % content
+                self.feat[2] = 0
+            else:
+                self.feat[2] = np.log(self.feat[0])
 
 
 class LastUserLength(Feature):
@@ -690,7 +699,11 @@ class LastUserLength(Feature):
             self.feat = np.zeros(3)
             self.feat[0] = len(word_tokenize(last_user_turn))
             self.feat[1] = np.sqrt(self.feat[0])
-            self.feat[2] = np.log(self.feat[0])
+            if self.feat[0] == 0:
+                print "Warning: number of words in last user msg is zero: `%s`" % last_user_turn
+                self.feat[2] = 0
+            else:
+                self.feat[2] = np.log(self.feat[0])
 
 
 class CandidateLength(Feature):
@@ -706,9 +719,13 @@ class CandidateLength(Feature):
             self.feat = None
         else:
             self.feat = np.zeros(3)
-            self.feat[0] = float(len(word_tokenize(candidate)))
+            self.feat[0] = len(word_tokenize(candidate))
             self.feat[1] = np.sqrt(self.feat[0])
-            self.feat[2] = np.log(self.feat[0])
+            if self.feat[0] == 0:
+                print "Warning: number of words in candidate is zero: `%s`" % candidate
+                self.feat[2] = 0
+            else:
+                self.feat[2] = np.log(self.feat[0])
 
 
 class ArticleLength(Feature):
@@ -728,7 +745,11 @@ class ArticleLength(Feature):
             self.feat = np.zeros(3)
             self.feat[0] = len(article_sents)
             self.feat[1] = np.sqrt(self.feat[0])
-            self.feat[2] = np.log(self.feat[0])
+            if self.feat[0] == 0:
+                print "Warning: number of sentences in article is zero: `%s`" % article
+                self.feat[2] = 0
+            else:
+                self.feat[2] = np.log(self.feat[0])
 
 
 class IntensifierWords(Feature):
