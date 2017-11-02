@@ -520,10 +520,115 @@ class ExtremaScore_CandidateKUser_noStop(Feature):
 
 ### Candidate -- article match ###
 
+class GreedyScore_CandidateArticle(Feature):
+
+    def __init__(self, article=None, context=None, candidate=None):
+        # Constructor: call super class constructor with dim=1
+        super(GreedyScore_CandidateArticle, self).__init__(1, article, context, candidate)
+        self.set(article, context, candidate)
+
+    def set(self, article, context, candidate):
+        """
+        set feature attribute to greedy score (dim: 1) between candidate response & article
+        """
+        if candidate is None or article is None:
+            self.feat = None
+        else:
+            res1 = greedy_score(candidate, article)
+            res2 = greedy_score(article, candidate)
+            self.feat = [(res1 + res2) / 2.0]
+
+
+class AverageScore_CandidateArticle(Feature):
+
+    def __init__(self, article=None, context=None, candidate=None):
+        # Constructor: call super class constructor with dim=1
+        super(AverageScore_CandidateArticle, self).__init__(1, article, context, candidate)
+        self.set(article, context, candidate)
+
+    def set(self, article, context, candidate):
+        """
+        set feature attribute to average embedding score (dim: 1) between candidate response & article
+        """
+        if candidate is None or article is None:
+            self.feat = None
+        else:
+            self.feat = [float(average_score(candidate, article))]
+
+
+class ExtremaScore_CandidateArticle(Feature):
+
+    def __init__(self, article=None, context=None, candidate=None):
+        # Constructor: call super class constructor with dim=1
+        super(ExtremaScore_CandidateArticle, self).__init__(1, article, context, candidate)
+        self.set(article, context, candidate)
+
+    def set(self, article, context, candidate):
+        """
+        set feature attribute to extrema embedding score (dim: 1) between candidate response & article
+        """
+        if candidate is None or article is None:
+            self.feat = None
+        else:
+            self.feat = [float(extrema_score(candidate, article))]
 
 
 ### Candidate -- article without stop words match ###
 
+class GreedyScore_CandidateArticle_noStop(Feature):
+
+    def __init__(self, article=None, context=None, candidate=None):
+        # Constructor: call super class constructor with dim=1
+        super(GreedyScore_CandidateArticle_noStop, self).__init__(1, article, context, candidate)
+        self.set(article, context, candidate)
+
+    def set(self, article, context, candidate):
+        """
+        set feature attribute to greedy score (dim: 1) between candidate response & article without stop words
+        """
+        if candidate is None or article is None:
+            self.feat = None
+        else:
+            content = ' '.join(filter(lambda word: word not in stop, article.strip().split()))
+            res1 = greedy_score(candidate, content)
+            res2 = greedy_score(content, candidate)
+            self.feat = [(res1 + res2) / 2.0]
+
+
+class AverageScore_CandidateArticle_noStop(Feature):
+
+    def __init__(self, article=None, context=None, candidate=None):
+        # Constructor: call super class constructor with dim=1
+        super(AverageScore_CandidateArticle_noStop, self).__init__(1, article, context, candidate)
+        self.set(article, context, candidate)
+
+    def set(self, article, context, candidate):
+        """
+        set feature attribute to average embedding score (dim: 1) between candidate response & article without stop words
+        """
+        if candidate is None or article is None:
+            self.feat = None
+        else:
+            content = ' '.join(filter(lambda word: word not in stop, article.strip().split()))
+            self.feat = [float(average_score(candidate, content))]
+
+
+class ExtremaScore_CandidateArticle_noStop(Feature):
+
+    def __init__(self, article=None, context=None, candidate=None):
+        # Constructor: call super class constructor with dim=1
+        super(ExtremaScore_CandidateArticle_noStop, self).__init__(1, article, context, candidate)
+        self.set(article, context, candidate)
+
+    def set(self, article, context, candidate):
+        """
+        set feature attribute to extrema embedding score (dim: 1) between candidate response & article without stop words
+        """
+        if candidate is None or article is None:
+            self.feat = None
+        else:
+            content = ' '.join(filter(lambda word: word not in stop, article.strip().split()))
+            self.feat = [float(extrema_score(candidate, content))]
 
 
 ### n-gram & entity overlaps ###
@@ -957,6 +1062,8 @@ if __name__ == '__main__':
         'GreedyScore_CandidateLastK_noStop', 'AverageScore_CandidateLastK_noStop', 'ExtremaScore_CandidateLastK_noStop',
         'GreedyScore_CandidateKUser', 'AverageScore_CandidateKUser', 'ExtremaScore_CandidateKUser',
         'GreedyScore_CandidateKUser_noStop', 'AverageScore_CandidateKUser_noStop', 'ExtremaScore_CandidateKUser_noStop',
+        'GreedyScore_CandidateArticle', 'AverageScore_CandidateArticle', 'ExtremaScore_CandidateArticle',
+        'GreedyScore_CandidateArticle_noStop', 'AverageScore_CandidateArticle_noStop', 'ExtremaScore_CandidateArticle_noStop',
         'EntityOverlap','BigramOverlap','TrigramOverlap','WhWords','DialogLength','LastUserLength','ArticleLength','CandidateLength'
     ]
 

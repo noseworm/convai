@@ -22,6 +22,8 @@ TARGET_TO_FEATURES = {
           'GreedyScore_CandidateLastK_noStop', 'AverageScore_CandidateLastK_noStop', 'ExtremaScore_CandidateLastK_noStop',
           'GreedyScore_CandidateKUser', 'AverageScore_CandidateKUser', 'ExtremaScore_CandidateKUser',
           'GreedyScore_CandidateKUser_noStop', 'AverageScore_CandidateKUser_noStop', 'ExtremaScore_CandidateKUser_noStop',
+          'GreedyScore_CandidateArticle', 'AverageScore_CandidateArticle', 'ExtremaScore_CandidateArticle',
+          'GreedyScore_CandidateArticle_noStop', 'AverageScore_CandidateArticle_noStop', 'ExtremaScore_CandidateArticle_noStop',
           'EntityOverlap','BigramOverlap','TrigramOverlap','WhWords','DialogLength','LastUserLength','ArticleLength','CandidateLength']
 }
 
