@@ -443,7 +443,7 @@ class NonStopWordOverlap(Feature):
 
             self.feat = [0]
             if len(candidate_tokens.intersection(last_response_tokens)) > 0:
-                self.feat[0] = 1
+                self.feat = [1]
 
 
 class BigramOverlap(Feature):
@@ -884,7 +884,7 @@ class DialogActCandidate(Feature):
         'yes', 'yea', 'yep', 'yop', 'yeah', 'right',
         'mm', 'mmm', 'mmmm', 'mmmm')
     negative_words = ('no', 'noo', 'nooo', 'noooo', 'nop', 'nope')
-    request_unigrams = ('please')
+    request_unigrams = ('please',)
     request_bigrams = (
         'can you', 'could you', "let 's", "talk about", "make me", "chat about",
         "discuss about", "tell me", "be quiet", "shut up", "have you"
@@ -932,7 +932,7 @@ class DialogActCandidate(Feature):
 
 class DialogActLastUser(Feature):
     def __init__(self, article=None, context=None, candidate=None):
-        super(DialogActLastUser, self).__init__(article, context, candidate)
+        super(DialogActLastUser, self).__init__(6, article, context, candidate)
         # NOTE: use the same unigram/bigram/trigrams as the previous class
         self.greeting_words = DialogActCandidate.greeting_words
         self.personal_q_bigrams = DialogActCandidate.personal_q_bigrams
@@ -1042,9 +1042,9 @@ if __name__ == '__main__':
         "i am not a fan of russian policies",
         "haha me neither !"
     ]
-    candidate1 = "i am happy to make you laught"
+    candidate1 = "i am happy to make you laugh"
     candidate2 = "ha ha ha"
-    candidate3 = "i like facebook"
+    candidate3 = "i am not a fan of you"
 
     features = [
         'AverageWordEmbedding_Candidate', 'AverageWordEmbedding_User', 'AverageWordEmbedding_LastK',
@@ -1054,7 +1054,7 @@ if __name__ == '__main__':
         'Similarity_CandidateKUser', 'Similarity_CandidateKUser_noStop',
         'Similarity_CandidateArticle', 'Similarity_CandidateArticle_noStop',
         'NonStopWordOverlap', 'BigramOverlap', 'TrigramOverlap', 'EntityOverlap',
-        'GenericTurns'
+        'GenericTurns',
         'WhWords', 'IntensifierWords', 'ConfusionWords', 'ProfanityWords', 'Negation',
         'DialogLength', 'LastUserLength', 'CandidateLength', 'ArticleLength',
         'DialogActCandidate', 'DialogActLastUser',
@@ -1063,7 +1063,7 @@ if __name__ == '__main__':
 
     for feature in features:
         logger.info("class: %s" % feature)
-        feature_obj = get(article, context, candidate1, [feature])[0]
+        feature_obj = get(article, context, candidate3, [feature])[0]
         logger.info("feature: %s" % (feature_obj.feat,))
         logger.info("dim: %d" % feature_obj.dim)
         logger.info("")

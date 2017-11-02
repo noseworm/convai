@@ -12,19 +12,46 @@ import os
 import features
 
 
+ALL_FEATURES = [
+    'AverageWordEmbedding_Candidate', 'AverageWordEmbedding_User', 'AverageWordEmbedding_LastK',
+    'AverageWordEmbedding_kUser', 'AverageWordEmbedding_Article',
+    'Similarity_CandidateUser',
+    'Similarity_CandidateLastK', 'Similarity_CandidateLastK_noStop',
+    'Similarity_CandidateKUser', 'Similarity_CandidateKUser_noStop',
+    'Similarity_CandidateArticle', 'Similarity_CandidateArticle_noStop',
+    'NonStopWordOverlap', 'BigramOverlap', 'TrigramOverlap', 'EntityOverlap',
+    'GenericTurns',
+    'WhWords', 'IntensifierWords', 'ConfusionWords', 'ProfanityWords', 'Negation',
+    'DialogLength', 'LastUserLength', 'CandidateLength', 'ArticleLength',
+    'DialogActCandidate', 'DialogActLastUser',
+    'SentimentScoreCandidate', 'SentimentScoreLastUser'
+]
+
 TARGET_TO_FEATURES = {
-    'r': ['AverageWordEmbedding_Candidate', 'AverageWordEmbedding_User', 'AverageWordEmbedding_Article',
-          'GreedyScore_CandidateUser', 'AverageScore_CandidateUser', 'ExtremaScore_CandidateUser',
-          'EntityOverlap', 'BigramOverlap', 'TrigramOverlap', 'WhWords', 'LastUserLength', 'CandidateLength'],
-    'R': ['AverageWordEmbedding_Candidate', 'AverageWordEmbedding_User', 'AverageWordEmbedding_LastK', 'AverageWordEmbedding_kUser', 'AverageWordEmbedding_Article',
-          'GreedyScore_CandidateUser', 'AverageScore_CandidateUser', 'ExtremaScore_CandidateUser',
-          'GreedyScore_CandidateLastK', 'AverageScore_CandidateLastK', 'ExtremaScore_CandidateLastK',
-          'GreedyScore_CandidateLastK_noStop', 'AverageScore_CandidateLastK_noStop', 'ExtremaScore_CandidateLastK_noStop',
-          'GreedyScore_CandidateKUser', 'AverageScore_CandidateKUser', 'ExtremaScore_CandidateKUser',
-          'GreedyScore_CandidateKUser_noStop', 'AverageScore_CandidateKUser_noStop', 'ExtremaScore_CandidateKUser_noStop',
-          'GreedyScore_CandidateArticle', 'AverageScore_CandidateArticle', 'ExtremaScore_CandidateArticle',
-          'GreedyScore_CandidateArticle_noStop', 'AverageScore_CandidateArticle_noStop', 'ExtremaScore_CandidateArticle_noStop',
-          'EntityOverlap','BigramOverlap','TrigramOverlap','WhWords','DialogLength','LastUserLength','ArticleLength','CandidateLength']
+    'r': [
+        'AverageWordEmbedding_Candidate', 'AverageWordEmbedding_User', 'AverageWordEmbedding_Article',
+        'Similarity_CandidateUser',
+        'NonStopWordOverlap', 'BigramOverlap', 'TrigramOverlap', 'EntityOverlap',
+        'GenericTurns',
+        'WhWords', 'IntensifierWords', 'ConfusionWords', 'ProfanityWords', 'Negation',
+        'LastUserLength', 'CandidateLength',
+        'DialogActCandidate', 'DialogActLastUser',
+        'SentimentScoreCandidate', 'SentimentScoreLastUser'
+    ],
+    'R': [
+        'AverageWordEmbedding_Candidate', 'AverageWordEmbedding_User', 'AverageWordEmbedding_LastK',
+        'AverageWordEmbedding_kUser', 'AverageWordEmbedding_Article',
+        'Similarity_CandidateUser',
+        'Similarity_CandidateLastK', 'Similarity_CandidateLastK_noStop',
+        'Similarity_CandidateKUser', 'Similarity_CandidateKUser_noStop',
+        'Similarity_CandidateArticle', 'Similarity_CandidateArticle_noStop',
+        'NonStopWordOverlap', 'BigramOverlap', 'TrigramOverlap', 'EntityOverlap',
+        'GenericTurns',
+        'WhWords', 'IntensifierWords', 'ConfusionWords', 'ProfanityWords', 'Negation',
+        'DialogLength', 'LastUserLength', 'CandidateLength', 'ArticleLength',
+        'DialogActCandidate', 'DialogActLastUser',
+        'SentimentScoreCandidate', 'SentimentScoreLastUser'
+    ]
 }
 
 
