@@ -17,6 +17,6 @@ git clone "$hredqa" hredqa/
 
 git clone https://github.com/Breakend/drqawrapper.git
 
-git clone https://github.com/xinyadu/nqg.git
+git clone https://github.com/koustuvsinha/nqg.git
 
 echo "-------Models downloaded-----------"
