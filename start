@@ -4,5 +4,8 @@ trap "trap - TERM && kill -- -$$" INT TERM EXIT
 cd /root/convai/models/drqawrapper/
 /bin/sh -c "./run_server" &
 
+cd /root/convai/models/nqg/sentence/
+th online_translate.lua &
+
 cd /root/convai
 THEANO_FLAGS=floatX=float32 python bot.py
