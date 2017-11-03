@@ -18,8 +18,11 @@ from candidate import CandidateQuestions
 import json
 import random
 import requests
+from nltk import sent_tokenize
 
 logger = logging.getLogger(__name__)
+
+NQG_ENDURL = 'http://localhost:8080'
 
 
 class Model_Wrapper(object):
@@ -346,3 +349,33 @@ class DRQA_Wrapper(Model_Wrapper):
             logger.error(e)
         context.append(self._format_to_model(response, len(context)))
         return response, context
+
+class NQG_Wrapper(Model_Wrapper):
+    def __init__(self, model_prefix, dict_fname, name, article_text):
+        super(NQG_Wrapper, self).__init__(model_prefix, name)
+        # extract all sentences from the article
+        logger.info('Preprocessing the questions for this article')
+        assert type(article_text) == 'string' # check condition if we use Spacy
+        sentences = sent_tokenize(article_text)
+        try:
+            res = requests.post(NQG_ENDURL, json={'sents':sentences})
+            res_data = res.json()
+            self.questions = res_data
+            for item in self.questions:
+                item.update({"used": 0})
+            logger.info('Preprocessed article')
+            self.questions.sort(key=lambda x: (x["score"], x["used"]),
+                    reverse=True)
+        except Exception as e:
+            logger.info('Error in NQG article fetching')
+            logger.error(e)
+
+    def get_response(self, user_id, text, context, article=None):
+        logger.info('----------------------------------------')
+        logger.info('Generating NQG question for user %s.' % user_id)
+        response = ''
+        if len(self.questions) > 0:
+            response = self.questions[0]['pred']
+        context.append(self._format_to_model(response, len(context)))
+        return response, context
+
