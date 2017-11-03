@@ -18,8 +18,11 @@ from candidate import CandidateQuestions
 import json
 import random
 import requests
+from nltk import sent_tokenize
 
 logger = logging.getLogger(__name__)
+
+NQG_ENDURL = 'http://localhost:8080'
 
 
 class Model_Wrapper(object):
@@ -41,12 +44,14 @@ class Model_Wrapper(object):
 
     def _format_to_model(self, text, context_length):
         text = utils.tokenize_utterance(text)
-        text = '%s %s </s>' % (self.speaker_token[context_length % 2], text.strip().lower())
+        text = '%s %s </s>' % (
+            self.speaker_token[context_length % 2], text.strip().lower())
         return text
 
     def _format_to_user(self, text):
         text = utils.detokenize_utterance(text)
-        return ' '.join(text.strip().split())  # strip, split, join to remove extra spaces
+        # strip, split, join to remove extra spaces
+        return ' '.join(text.strip().split())
 
     def get_response(self, user_id, text, context, article=None):
         """
@@ -97,8 +102,10 @@ class HRED_Wrapper(Model_Wrapper):
             return_words=True
         )
         response = samples[0][0].replace('@@ ', '').replace('@@', '')
-        response = self._format_to_user(response)  # remove all tags to avoid having <unk>
-        context.append(self._format_to_model(response, len(context)))  # add appropriate tags to the response in the context
+        # remove all tags to avoid having <unk>
+        response = self._format_to_user(response)
+        # add appropriate tags to the response in the context
+        context.append(self._format_to_model(response, len(context)))
         logger.info('Response: %s' % response)
         return response, context
 
@@ -131,7 +138,8 @@ class Dual_Encoder_Wrapper(Model_Wrapper):
             logger.info("W.shape: %s" % (W.shape,))
 
             logger.info("Creating model...")
-            self.model = self._create_model(data, W, word2idx, idx2word, old_args)
+            self.model = self._create_model(
+                data, W, word2idx, idx2word, old_args)
 
             logger.info("Set the learned weights...")
             with open('%s_best_weights.pkl' % model_prefix, 'rb') as handle:
@@ -146,7 +154,8 @@ class Dual_Encoder_Wrapper(Model_Wrapper):
 
         with open('%s_timings.pkl' % model_prefix, 'rb') as handle:
             timings = cPickle.load(handle)
-            self.model.timings = timings  # load last timings (when no improvement was done)
+            # load last timings (when no improvement was done)
+            self.model.timings = timings
         logger.info("Model loaded.")
 
         with open("%s_r-encs.pkl" % model_prefix, 'rb') as handle:
@@ -200,8 +209,10 @@ class Dual_Encoder_Wrapper(Model_Wrapper):
         response_set_idx = range(len(self.cached_retrieved_data['r']))
         np.random.shuffle(response_set_idx)
         response_set_idx = response_set_idx[:self.n_resp]
-        response_set_str = [self.cached_retrieved_data['r'][i] for i in response_set_idx]
-        response_set_embs = [self.cached_retrieved_data['r_embs'][i] for i in response_set_idx]
+        response_set_str = [self.cached_retrieved_data['r'][i]
+                            for i in response_set_idx]
+        response_set_embs = [self.cached_retrieved_data['r_embs'][i]
+                             for i in response_set_idx]
 
         cached_retrieved_data = self.model.retrieve(
             context_set=[' '.join(list(context))],
@@ -209,10 +220,13 @@ class Dual_Encoder_Wrapper(Model_Wrapper):
             response_embs=response_set_embs,
             k=1, batch_size=1, verbose=False
         )
-        response = cached_retrieved_data['r_retrieved'][0][0].replace('@@ ', '').replace('@@', '')
+        response = cached_retrieved_data['r_retrieved'][0][0].replace(
+            '@@ ', '').replace('@@', '')
 
-        response = self._format_to_user(response)  # remove all tags to avoid having <unk>
-        context.append(self._format_to_model(response, len(context)))  # add appropriate tags to the response in the context
+        # remove all tags to avoid having <unk>
+        response = self._format_to_user(response)
+        # add appropriate tags to the response in the context
+        context.append(self._format_to_model(response, len(context)))
         logger.info('Response: %s' % response)
         return response, context
 
@@ -236,7 +250,8 @@ class HREDQA_Wrapper(Model_Wrapper):
         text = super(HREDQA_Wrapper, self)._format_to_user(text)
         if not text.endswith('?'):
             text = text + ' ?'
-        return ' '.join(text.strip().split())  # strip, split, join to remove extra spaces
+        # strip, split, join to remove extra spaces
+        return ' '.join(text.strip().split())
 
     def get_response(self, user_id, text, context, article=None):
         logger.info('------------------------------------')
@@ -261,7 +276,7 @@ class CandidateQuestions_Wrapper(Model_Wrapper):
     def __init__(self, model_prefix, article_text, dict_fname, name):
         super(CandidateQuestions_Wrapper, self).__init__(model_prefix, name)
 
-        self.model = CandidateQuestions(article_text,dict_fname)
+        self.model = CandidateQuestions(article_text, dict_fname)
 
     def _get_sentences(self, context):
         sents = [re.sub('<[^>]+>', '', p) for p in context]
@@ -271,7 +286,8 @@ class CandidateQuestions_Wrapper(Model_Wrapper):
         text = super(HREDQA_Wrapper, self)._format_to_user(text)
         if not text.endswith('?'):
             text = text + ' ?'
-        return ' '.join(text.strip().split())  # strip, split, join to remove extra spaces
+        # strip, split, join to remove extra spaces
+        return ' '.join(text.strip().split())
 
     def get_response(self, user_id, text, context, article=None):
         logger.info('------------------------------------')
@@ -284,22 +300,23 @@ class CandidateQuestions_Wrapper(Model_Wrapper):
         context.append(self._format_to_model(response, len(context)))
         return response, context
 
+
 class DumbQuestions_Wrapper(Model_Wrapper):
     def __init__(self, model_prefix, dict_fname, name):
         super(DumbQuestions_Wrapper, self).__init__(model_prefix, name)
-        self.data = json.load(open(dict_fname,'r'))
+        self.data = json.load(open(dict_fname, 'r'))
 
     # check if user text is match to one of the keys
-    def isMatch(self,text):
-        for key,value in self.data.iteritems():
-            if re.match(key,text,re.IGNORECASE):
+    def isMatch(self, text):
+        for key, value in self.data.iteritems():
+            if re.match(key, text, re.IGNORECASE):
                 return True
         return False
 
     # return the key which matches
-    def getMatch(self,text):
-        for key,value in self.data.iteritems():
-            if re.match(key,text,re.IGNORECASE):
+    def getMatch(self, text):
+        for key, value in self.data.iteritems():
+            if re.match(key, text, re.IGNORECASE):
                 return key
         return False
 
@@ -313,21 +330,22 @@ class DumbQuestions_Wrapper(Model_Wrapper):
         context.append(self._format_to_model(response, len(context)))
         return response, context
 
+
 class DRQA_Wrapper(Model_Wrapper):
     def __init__(self, model_prefix, dict_fname, name):
         super(DRQA_Wrapper, self).__init__(model_prefix, name)
 
     # check if user text is match to one of the keys
-    def isMatch(self,text):
-        for key,value in self.data.iteritems():
-            if re.match(key,text,re.IGNORECASE):
+    def isMatch(self, text):
+        for key, value in self.data.iteritems():
+            if re.match(key, text, re.IGNORECASE):
                 return True
         return False
 
     # return the key which matches
-    def getMatch(self,text):
-        for key,value in self.data.iteritems():
-            if re.match(key,text,re.IGNORECASE):
+    def getMatch(self, text):
+        for key, value in self.data.iteritems():
+            if re.match(key, text, re.IGNORECASE):
                 return key
         return False
 
@@ -338,11 +356,43 @@ class DRQA_Wrapper(Model_Wrapper):
         context.append(ctext)
         response = ''
         try:
-            res = requests.post('http://localhost:8888/ask', json={'article':article.text,'question':text})
+            res = requests.post('http://localhost:8888/ask',
+                                json={'article': article.text, 'question': text})
             res_data = res.json()
             response = res_data['reply']['text']
         except Exception as e:
             print e
             logger.error(e)
+        context.append(self._format_to_model(response, len(context)))
+        return response, context
+
+
+class NQG_Wrapper(Model_Wrapper):
+    def __init__(self, model_prefix, dict_fname, name, article_text):
+        super(NQG_Wrapper, self).__init__(model_prefix, name)
+        # extract all sentences from the article
+        logger.info('Preprocessing the questions for this article')
+        # check condition if we use Spacy
+        assert type(article_text) == 'string'
+        sentences = sent_tokenize(article_text)
+        try:
+            res = requests.post(NQG_ENDURL, json={'sents': sentences})
+            res_data = res.json()
+            self.questions = res_data
+            for item in self.questions:
+                item.update({"used": 0})
+            logger.info('Preprocessed article')
+            self.questions.sort(key=lambda x: (
+                x["score"], x["used"]), reverse=True)
+        except Exception as e:
+            logger.info('Error in NQG article fetching')
+            logger.error(e)
+
+    def get_response(self, user_id, text, context, article=None):
+        logger.info('----------------------------------------')
+        logger.info('Generating NQG question for user %s.' % user_id)
+        response = ''
+        if len(self.questions) > 0:
+            response = self.questions[0]['pred']
         context.append(self._format_to_model(response, len(context)))
         return response, context

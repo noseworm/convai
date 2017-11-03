@@ -45,8 +45,8 @@ class CandidateQuestions(object):
     def _get_entities(self):
         self.line2token = {} # dictionary containing which tokens correspond to which line
         self.neighbors = {}
-	ents = self.doc.ents
-	for ent in ents:
+        ents = self.doc.ents
+        for ent in ents:
             self.entities.append(ent)
             self.entities_str.append(ent.text)
     
