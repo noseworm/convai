@@ -373,7 +373,7 @@ class NQG_Wrapper(Model_Wrapper):
         # extract all sentences from the article
         logger.info('Preprocessing the questions for this article')
         # check condition if we use Spacy
-        assert type(article_text) == 'string'
+        assert isinstance(article_text, basestring)
         sentences = sent_tokenize(article_text)
         try:
             res = requests.post(NQG_ENDURL, json={'sents': sentences})
@@ -382,8 +382,7 @@ class NQG_Wrapper(Model_Wrapper):
             for item in self.questions:
                 item.update({"used": 0})
             logger.info('Preprocessed article')
-            self.questions.sort(key=lambda x: (
-                x["score"], x["used"]), reverse=True)
+            self.questions.sort(key=lambda x:  x["score"])
         except Exception as e:
             logger.info('Error in NQG article fetching')
             logger.error(e)
@@ -394,5 +393,8 @@ class NQG_Wrapper(Model_Wrapper):
         response = ''
         if len(self.questions) > 0:
             response = self.questions[0]['pred']
+            self.questions[0]['used'] += 1
+            self.questions.sort(key=lambda x: x["used"])
+
         context.append(self._format_to_model(response, len(context)))
         return response, context
