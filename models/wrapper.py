@@ -66,6 +66,12 @@ class Model_Wrapper(object):
         """
         pass  # TO BE IMPLEMENTED IN SUB-CLASSES
 
+    def preprocess(self, user_id, article=None):
+        """
+        Preprocess before model responses, needed for some models (NQG)
+        """
+        pass  # OPTIONAL, may or may not implement this
+
 
 class HRED_Wrapper(Model_Wrapper):
 
@@ -273,10 +279,19 @@ class HREDQA_Wrapper(Model_Wrapper):
 
 
 class CandidateQuestions_Wrapper(Model_Wrapper):
-    def __init__(self, model_prefix, article_text, dict_fname, name):
+    def __init__(self, model_prefix, dict_fname, name):
         super(CandidateQuestions_Wrapper, self).__init__(model_prefix, name)
+        # Use these questions if no suitable questions are found
+        # TODO: do not hardcode these, use a dictionary
+        self.dict_fname = dict_fname
+        self.canned_questions = ["That's a short article, don't you think? Not sure what's it about.",
+                                 "Apparently I am too dumb for this article. What's it about?"]
+        self.models = {}
 
-        self.model = CandidateQuestions(article_text, dict_fname)
+    def preprocess(self, chat_id, article_text):
+        assert isinstance(article_text, basestring)
+        self.models[chat_id] = CandidateQuestions(
+            article_text, self.dict_fname)
 
     def _get_sentences(self, context):
         sents = [re.sub('<[^>]+>', '', p) for p in context]
@@ -289,14 +304,17 @@ class CandidateQuestions_Wrapper(Model_Wrapper):
         # strip, split, join to remove extra spaces
         return ' '.join(text.strip().split())
 
-    def get_response(self, user_id, text, context, article=None):
+    def get_response(self, chat_id, text, context, article=None):
         logger.info('------------------------------------')
-        logger.info('Generating candidate question for user %s.' % user_id)
+        logger.info('Generating candidate question for chat %s.' % chat_id)
         text = self._format_to_model(text, len(context))
         logger.info(text)
         context.append(text)
 
-        response = self.model.get_response()
+        response = self.models[chat_id].get_response()
+        if len(response) < 1:
+            # select canned response
+            response = random.choice(self.canned_questions)
         context.append(self._format_to_model(response, len(context)))
         return response, context
 
@@ -368,8 +386,11 @@ class DRQA_Wrapper(Model_Wrapper):
 
 
 class NQG_Wrapper(Model_Wrapper):
-    def __init__(self, model_prefix, dict_fname, name, article_text):
+    def __init__(self, model_prefix, dict_fname, name):
         super(NQG_Wrapper, self).__init__(model_prefix, name)
+        self.questions = {}
+
+    def preprocess(self, chat_id, article_text):
         # extract all sentences from the article
         logger.info('Preprocessing the questions for this article')
         # check condition if we use Spacy
@@ -378,11 +399,11 @@ class NQG_Wrapper(Model_Wrapper):
         try:
             res = requests.post(NQG_ENDURL, json={'sents': sentences})
             res_data = res.json()
-            self.questions = res_data
-            for item in self.questions:
+            self.questions[chat_id] = res_data
+            for item in self.questions[chat_id]:
                 item.update({"used": 0})
             logger.info('Preprocessed article')
-            self.questions.sort(key=lambda x:  x["score"])
+            self.questions[chat_id].sort(key=lambda x:  x["score"])
         except Exception as e:
             logger.info('Error in NQG article fetching')
             logger.error(e)
@@ -392,9 +413,12 @@ class NQG_Wrapper(Model_Wrapper):
         logger.info('Generating NQG question for user %s.' % user_id)
         response = ''
         if len(self.questions) > 0:
-            response = self.questions[0]['pred']
-            self.questions[0]['used'] += 1
-            self.questions.sort(key=lambda x: x["used"])
+            response = self.questions[user_id][0]['pred']
+            self.questions[user_id][0]['used'] += 1
+            self.questions[user_id].sort(key=lambda x: x["used"])
 
         context.append(self._format_to_model(response, len(context)))
         return response, context
+
+    def clean(self, chat_id):
+        del self.questions[chat_id]
