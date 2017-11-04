@@ -354,9 +354,9 @@ class Similarity_CandidateKUser_noStop(Feature):
             res1 = greedy_score(candidate, user_turns)
             res2 = greedy_score(user_turns, candidate)
             self.feat = np.zeros(3)
-            self.feat = (res1 + res2) / 2.0
-            self.feat = float(average_score(candidate, user_turns))
-            self.feat = float(extrema_score(candidate, user_turns))
+            self.feat[0] = (res1 + res2) / 2.0
+            self.feat[1] = float(average_score(candidate, user_turns))
+            self.feat[2] = float(extrema_score(candidate, user_turns))
 
 
 ### Candidate -- article match ###
@@ -441,9 +441,9 @@ class NonStopWordOverlap(Feature):
             candidate_tokens = set(filter(lambda word: word not in stop, word_tokenize(candidate)))
             last_response_tokens = set(filter(lambda word: word not in stop, word_tokenize(last_response)))
 
-            self.feat = [0]
+            self.feat = np.array([0])
             if len(candidate_tokens.intersection(last_response_tokens)) > 0:
-                self.feat = [1]
+                self.feat = np.array([1])
 
 
 class BigramOverlap(Feature):
@@ -927,7 +927,7 @@ class DialogActCandidate(Feature):
             ) else 0
             politic = 1 if len(set(candidate_tokens).intersection(self.political_words)) > 0 else 0
 
-            self.feat = [greeting, personal_q, affirmative, negative, request, politic]
+            self.feat = np.array([greeting, personal_q, affirmative, negative, request, politic])
 
 
 class DialogActLastUser(Feature):
@@ -969,7 +969,7 @@ class DialogActLastUser(Feature):
             ) else 0
             politic = 1 if len(set(last_turn_tokens).intersection(self.political_words)) > 0 else 0
 
-            self.feat = [greeting, personal_q, affirmative, negative, request, politic]
+            self.feat = np.array([greeting, personal_q, affirmative, negative, request, politic])
 
 
 ### Sentiment score ###
