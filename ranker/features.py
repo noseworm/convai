@@ -163,7 +163,8 @@ class AverageWordEmbedding_kUser(Feature):
             self.feat = None
         else:
             X = np.zeros((self.dim,), dtype='float32')
-            content = np.array(context)[range(-2*self.k+1, 0, 2)]
+            start = min(len(context), 2*self.k+1)
+            content = np.array(context)[range(-start, 0, 2)]
             content = ' '.join(content).lower()
             logger.debug("last %d user turns: %s" % (self.k, content))
             for tok in word_tokenize(content):
@@ -313,7 +314,8 @@ class Similarity_CandidateKUser(Feature):
             self.feat = None
         else:
             candidate = candidate.lower()
-            user_turns = np.array(context)[range(-2*self.k+1, 0, 2)]
+            start = min(len(context), 2*self.k+1)
+            user_turns = np.array(context)[range(-start, 0, 2)]
             user_turns = ' '.join(user_turns).lower()
             logger.debug("last %d user turns: %s" % (self.k, user_turns))
 
@@ -346,7 +348,8 @@ class Similarity_CandidateKUser_noStop(Feature):
             self.feat = None
         else:
             candidate = candidate.lower()
-            user_turns = np.array(context)[range(-2*self.k+1, 0, 2)]
+            start = min(len(context), 2*self.k+1)
+            user_turns = np.array(context)[range(-start, 0, 2)]
             user_turns = ' '.join(user_turns).lower()
             user_turns = ' '.join(filter(lambda word: word not in stop, word_tokenize(user_turns)))
             logger.debug("last %d user turns: %s" % (self.k, user_turns))
