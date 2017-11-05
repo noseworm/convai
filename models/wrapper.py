@@ -422,3 +422,20 @@ class NQG_Wrapper(Model_Wrapper):
 
     def clean(self, chat_id):
         del self.questions[chat_id]
+
+
+class Echo_Wrapper(Model_Wrapper):
+    def __init__(self, model_prefix, dict_fname, name):
+        super(Echo_Wrapper, self).__init__(model_prefix, name)
+
+    def get_response(self, user_id, text, context, article=None):
+        logger.info('------------------------------------')
+        logger.info('Generating Echo response for user %s.' % user_id)
+        text = self._format_to_model(text, len(context))
+        context.append(text)
+        logger.info('Using context: %s' % ' '.join(list(context)))
+
+        response = text
+        response = self._format_to_user(response)
+        context.append(self._format_to_model(response, len(context)))
+        return response, context
