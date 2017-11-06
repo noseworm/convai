@@ -183,7 +183,6 @@ class ModelClient(Process):
         while self.is_running:
             packet = socket_b.recv()
             topic, msg = demogrify(packet)
-            print msg
             if 'control' in msg:
                 if msg['control'] == 'init':
                     logging.info(
@@ -312,9 +311,7 @@ def act():
 
 def responder():
     context = zmq.Context()
-    print "trying"
     socket = context.socket(zmq.PUB)
-    print "binding"
     socket.bind(COMMAND_PIPE)
     logging.info("Child publish channel active")
     while True:
