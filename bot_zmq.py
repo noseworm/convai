@@ -8,7 +8,6 @@ import json
 import time
 import random
 import collections
-import model_selection_zmq
 import config
 conf = config.get_config()
 import random
@@ -77,8 +76,7 @@ class ConvAIRLLBot:
                 self.ai[chat_id] = {}
                 self.ai[chat_id]['chat_id'] = chat_id
                 self.ai[chat_id]['observation'] = m['message']['text']
-                self.ai[chat_id]['context'] = collections.deque(
-                    maxlen=MAX_CONTEXT)
+                self.ai[chat_id]['context'] = [] # changed from deque since it is not JSON serializable
                 logging.info("Start new chat #%s" % self.chat_id)
                 state = ChatState.START  # we started a new dialogue
                 chat_history[chat_id] = []
@@ -89,7 +87,7 @@ class ConvAIRLLBot:
             # Finished chat
             if m['message']['text'] == '/end':
                 logging.info("End chat #%s" % chat_id)
-                processing_msg_queue({'control': 'clean', 'chat_id': chat_id})
+                processing_msg_queue.put({'control': 'clean', 'chat_id': chat_id})
                 del self.ai[chat_id]
                 state = ChatState.END  # we finished a dialogue
             # Continue chat
@@ -134,6 +132,7 @@ class ConvAIRLLBot:
                 Let me go through the article real quick and we will start
                 talking about it.
                 """
+            text = text.strip('\n')
             # push this response to `outgoing_msg_queue`
             outgoing_msg_queue.put(
                 {'text': text, 'chat_id': chat_id,
@@ -165,11 +164,13 @@ def consumer():
     """
     context = zmq.Context()
     socket = context.socket(zmq.PULL)
-    socket.connect(PARENT_PIPE)
+    socket.bind(PARENT_PIPE)
     logging.info("Main pull channel active")
     while True:
         msg = socket.recv_json()
-        bot.ai[msg['chat_id']]['context'] = msg['context']
+        print msg
+        # only store the last MAX_CONTEXT in the array
+        bot.ai[msg['chat_id']]['context'] = msg['context'][:-MAX_CONTEXT]
         outgoing_msg_queue.put(msg)
 
 
@@ -178,12 +179,13 @@ def producer():
     """
     context = zmq.Context()
     socket = context.socket(zmq.PUSH)
-    socket.connect(PARENT_PULL_PIPE)
+    socket.bind(PARENT_PULL_PIPE)
     logging.info("Main push channel active")
     while True:
         msg = processing_msg_queue.get()
         socket.send_json(msg)
         processing_msg_queue.task_done()
+        logging.info("Sending msg to response selector:{}".format(json.dumps(msg)))
 
 
 def response_receiver(telegram=True):

@@ -195,6 +195,9 @@ class ModelClient(Process):
                     self.is_running = False
             else:
                 # assumes the msg will contain keyword parameters
+                # remove unneccary fields
+                del msg['control']
+                del msg['topic']
                 response, context = self.model.get_response(**msg)
                 resp_msg = {'response': response, 'context': context,
                             'model_name': self.model_name,
@@ -326,6 +329,7 @@ def consumer():
                 stop_models()
                 logging.info("Exiting")
                 is_running = False
+                sys.exit(0)
             if msg['control'] == 'clean':
                 clean(msg['chat_id'])
         else:
@@ -341,9 +345,9 @@ def producer():
     socket.connect(PARENT_PIPE)
     logging.info("Parent push channel active")
     while True:
-        msg = job_queue.get()
+        msg = response_queue.get()
         socket.send_json(msg)
-        job_queue.task_done()
+        response_queue.task_done()
 
 
 def clean(chat_id):
@@ -368,7 +372,7 @@ def strip_emojis(str):
 
 def get_response(chat_id, text, context, allowed_model=None):
     # create a chat_id + unique ID candidate responses field
-    chat_unique_id = chat_id + '_' + uuid.uuid4()
+    chat_unique_id = str(chat_id) + '_' + str(uuid.uuid4())
     model_responses[chat_unique_id] = {}
     is_start = False
 
@@ -393,23 +397,23 @@ def get_response(chat_id, text, context, allowed_model=None):
         # fire global preprocess call
         submit_job(job_type='preprocess',
                    article=article_text[chat_id],
-                   chat_id=chat_id)
+                   chat_id=chat_unique_id)
         # fire candidate question and NQG
         submit_job(job_type='get_response',
                    to_model=ModelID.CAND_QA,
-                   chat_id=chat_id,
+                   chat_id=chat_unique_id,
                    context=context,
                    text=text)
         submit_job(job_type='get_response',
                    to_model=ModelID.NQG,
-                   chat_id=chat_id,
+                   chat_id=chat_unique_id,
                    context=context,
                    text=text)
 
     else:
         # fire global query
         submit_job(job_type='get_response',
-                   chat_id=chat_id,
+                   chat_id=chat_unique_id,
                    context=context,
                    text=text)
 
