@@ -321,6 +321,8 @@ class ShortTermEstimator(object):
         :param dropout_rate: probability of drop out
         :param save: decide if we save the model & its parameters
         """
+        self.batch_size = batch_size
+        self.dropout_rate = dropout_rate
         self.train_accuracies = []
         self.valid_accuracies = []
 
@@ -412,7 +414,8 @@ class ShortTermEstimator(object):
             ]
             with open("%s_args.pkl" % prefix, 'wb') as handle:
                 pkl.dump(
-                    [data, self.hidden_dims, self.activation, self.optimizer, self.model_id],
+                    [data, self.hidden_dims, self.activation, self.optimizer, self.lr, self.model_id,
+                     self.batch_size, self.dropout_rate],
                     handle,
                     pkl.HIGHEST_PROTOCOL
                 )
@@ -501,59 +504,92 @@ def main(args):
         feats, hidds, activs, optims, lrs, drs, bss = sample_parameters(args.explore)
         best_args = []  # store the best combination
         best_valid_acc = 0.0  # store the best validation accuracy
+        best_model = None  # store the best model id
+        valid_threshold = 0.62  # accuracy must be higher than 62% to be saved
         print "Will try %d different configurations..." % args.explore
         for idx in range(args.explore):
             with tf.Session() as sess:
-                # print sampled parameters
-                print "\n[%d] sampled features:\n%s" % (idx+1, feats[idx])
-                print "[%d] sampled hidden_sizes: %s" % (idx+1, hidds[idx])
-                print "[%d] sampled activation: %s" % (idx+1, activs[idx])
-                print "[%d] sampled optimizer: %s" % (idx+1, optims[idx])
-                print "[%d] sampled learning rate: %g" % (idx+1, lrs[idx])
-                print "[%d] sampled dropout rate: %g" % (idx+1, drs[idx])
-                print "[%d] sampled batch size: %d" % (idx+1, bss[idx])
+                try:
+                    # print sampled parameters
+                    print "\n[%d] sampled features:\n%s" % (idx+1, feats[idx])
+                    print "[%d] sampled hidden_sizes: %s" % (idx+1, hidds[idx])
+                    print "[%d] sampled activation: %s" % (idx+1, activs[idx])
+                    print "[%d] sampled optimizer: %s" % (idx+1, optims[idx])
+                    print "[%d] sampled learning rate: %g" % (idx+1, lrs[idx])
+                    print "[%d] sampled dropout rate: %g" % (idx+1, drs[idx])
+                    print "[%d] sampled batch size: %d" % (idx+1, bss[idx])
 
-                # Load datasets
-                data = get_data(args.data, 'r', feature_list=feats[idx], voted_only=True, save=False)
-                trains = data[0]
-                print "[%d] Building the network..." % (idx+1,)
-                estimator1 = ShortTermEstimator(
-                    data,
-                    hidds[idx],
-                    activs[idx],
-                    optims[idx],
-                    lrs[idx]
-                )
-                print "[%d] Training the network..." % (idx+1,)
-                estimator1.train(
-                    sess,
-                    args.patience,
-                    bss[idx],
-                    drs[idx],
-                    save=False  # don't save for now
-                )
-                # train_acc = max(estimator1.train_accuracies)
-                # valid_acc = max(estimator1.valid_accuracies)
-                max_train = [max(estimator1.train_accuracies[i]) for i in range(len(trains))]
-                max_valid = [max(estimator1.valid_accuracies[i]) for i in range(len(trains))]
-                print "[%d] max train accuracies: %s" % (idx+1, max_train)
-                print "[%d] max valid accuracies: %s" % (idx+1, max_valid)
-                train_acc = np.mean(max_train)
-                valid_acc = np.mean(max_valid)
-                print "[%d] best avg. train accuracy: %g" % (idx+1, train_acc)
-                print "[%d] best avg. valid accuracy: %g" % (idx+1, valid_acc)
+                    # Load datasets
+                    data = get_data(args.data, 'r', feature_list=feats[idx], voted_only=True, save=False)
+                    trains = data[0]
+                    print "[%d] Building the network..." % (idx+1,)
+                    estimator1 = ShortTermEstimator(
+                        data,
+                        hidds[idx],
+                        activs[idx],
+                        optims[idx],
+                        lrs[idx]
+                    )
+                    print "[%d] Training the network..." % (idx+1,)
+                    estimator1.train(
+                        sess,
+                        args.patience,
+                        bss[idx],
+                        drs[idx],
+                        save=False  # don't save for now
+                    )
+                    max_train = [max(estimator1.train_accuracies[i]) for i in range(len(trains))]
+                    max_valid = [max(estimator1.valid_accuracies[i]) for i in range(len(trains))]
+                    print "[%d] max train accuracies: %s" % (idx+1, max_train)
+                    print "[%d] max valid accuracies: %s" % (idx+1, max_valid)
+                    train_acc = np.mean(max_train)
+                    valid_acc = np.mean(max_valid)
+                    print "[%d] best avg. train accuracy: %g" % (idx+1, train_acc)
+                    print "[%d] best avg. valid accuracy: %g" % (idx+1, valid_acc)
 
-                # save now if we got better model
-                if valid_acc > best_valid_acc:
-                    best_valid_acc = valid_acc
-                    best_args = [feats[idx], hidds[idx], activs[idx], optims[idx], lrs[idx], drs[idx], bss[idx]]
-                    estimator1.save(sess)
-                else:
-                    print "[%d] do not save: best validation accuracy is still %g" % (idx+1, best_valid_acc)
+                    # save now if we got a good model
+                    if valid_acc > valid_threshold:
+                        estimator1.save(sess)
 
-            tf.reset_default_graph()  # reset the graph for new run
+                    # update variables if we got better model
+                    if valid_acc > best_valid_acc:
+                        print "[%d] got better accuracy! new: %g > old: %g" % (idx+1, valid_acc, best_valid_acc)
+                        best_valid_acc = valid_acc
+                        best_model = estimator1.model_id
+                        best_args = [feats[idx], hidds[idx], activs[idx], optims[idx], lrs[idx], drs[idx], bss[idx]]
+                    else:
+                        print "[%d] best validation accuracy is still %g" % (idx+1, best_valid_acc)
 
-        print "done."
+                # end of try block, catch CTRL+C errors to print current results
+                except KeyboardInterrupt as e:
+                    print e
+                    print "best model: %s" % best_model
+                    print "with parameters:"
+                    print " - features:\n%s"     % best_args[0]
+                    print " - hidden_sizes: %s"  % best_args[1]
+                    print " - activation: %s"    % best_args[2]
+                    print " - optimizer: %s"     % best_args[3]
+                    print " - learning rate: %g" % best_args[4]
+                    print " - dropout rate: %g"  % best_args[5]
+                    print " - batch size: %d"    % best_args[6]
+                    print "with average valid accuracy: %g" % best_valid_acc
+                    sys.exit()
+
+            # end of tensorflow session, reset for the next graph
+            tf.reset_default_graph()
+
+        # end of exploration, print best results:
+        print "done!"
+        print "best model: %s" % best_model
+        print "with parameters:"
+        print " - features:\n%s"     % best_args[0]
+        print " - hidden_sizes: %s"  % best_args[1]
+        print " - activation: %s"    % best_args[2]
+        print " - optimizer: %s"     % best_args[3]
+        print " - learning rate: %g" % best_args[4]
+        print " - dropout rate: %g"  % best_args[5]
+        print " - batch size: %d"    % best_args[6]
+        print "with average valid accuracy: %g" % best_valid_acc
 
     else:
         # run one experiment with provided parameters
@@ -566,7 +602,8 @@ def main(args):
             data,
             args.hidden_sizes_1,
             args.activation_1,
-            args.optimizer_1
+            args.optimizer_1,
+            args.learning_rate_1
         )
         with tf.Session() as sess:
             print "\nTraining the network..."
@@ -587,7 +624,7 @@ if __name__ == '__main__':
     parser.add_argument("-ex", "--explore", type=int, default=None, help="Number of times to sample parameters. If None, will use the one provided")
     # training parameters:
     parser.add_argument("-bs", "--batch_size", type=int, default=128, help="batch size during training")
-    parser.add_argument("-p",  "--patience", type=int, default=15, help="Number of training steps to wait before stoping when validatiaon accuracy doesn't increase")
+    parser.add_argument("-p",  "--patience", type=int, default=20, help="Number of training steps to wait before stoping when validatiaon accuracy doesn't increase")
     # network architecture:
     parser.add_argument("-h1", "--hidden_sizes_1", nargs='+', type=int, default=[500, 300, 100, 10], help="List of hidden sizes for first network")
     parser.add_argument("-h2", "--hidden_sizes_2", nargs='+', type=int, default=[500, 300, 100, 10], help="List of hidden sizes for second network")
@@ -597,6 +634,8 @@ if __name__ == '__main__':
     parser.add_argument("-d2", "--dropout_rate_2", type=float, default=0.1, help="Probability of dropout layer in second network")
     parser.add_argument("-op1","--optimizer_1", choices=['adam', 'sgd', 'rmsprop', 'adagrad', 'adadelta'], default='adam', help="Optimizer to train the first network")
     parser.add_argument("-op2","--optimizer_2", choices=['adam', 'sgd', 'rmsprop', 'adagrad', 'adadelta'], default='adam', help="Optimizer to train the second network")
+    parser.add_argument("-lr1","--learning_rate_1", type=float, default=0.001, help="Learning rate for the first network")
+    parser.add_argument("-lr2","--learning_rate_2", type=float, default=0.001, help="Learning rate for the second network")
     args = parser.parse_args()
     print "\n%s\n" % args
 
