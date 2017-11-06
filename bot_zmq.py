@@ -1,3 +1,28 @@
+import zmq
+import sys
+reload(sys)
+sys.setdefaultencoding('utf8')
+import requests
+import os
+import json
+import time
+import random
+import collections
+import model_selection_zmq
+import config
+conf = config.get_config()
+import random
+import emoji
+import storage
+from Queue import Queue
+from threading import Thread
+import logging
+import traceback
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(name)s.%(funcName)s +%(lineno)s: %(levelname)-8s [%(process)d] %(message)s',
+)
+
 """
 Copyright 2017 Reasoning & Learning Lab, McGill University
 
@@ -13,34 +38,21 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 """
-# encoding=utf8  
-import sys  
-reload(sys)  
-sys.setdefaultencoding('utf8')
-import requests
-import os
-import json
-import time
-import random
-import collections
-import model_selection
-import config
-conf = config.get_config()
-import random
-import emoji
-import storage
-import logging
-import traceback
-import zmq
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s %(name)s.%(funcName)s +%(lineno)s: %(levelname)-8s [%(process)d] %(message)s',
-)
+
 
 MAX_CONTEXT = 3
 
 chat_history = {}
-mSelect = model_selection.ModelSelection()
+
+# Queues
+processing_msg_queue = Queue()
+outgoing_msg_queue = Queue()
+
+# Pipes
+# parent to bot caller
+PARENT_PIPE = 'ipc:///tmp/parent_push.pipe'
+# bot to parent caller
+PARENT_PULL_PIPE = 'ipc:///tmp/parent_pull.pipe'
 
 
 class ChatState:
@@ -77,7 +89,7 @@ class ConvAIRLLBot:
             # Finished chat
             if m['message']['text'] == '/end':
                 logging.info("End chat #%s" % chat_id)
-                mSelect.clean(chat_id)  # remove mSelect data for this chat id
+                processing_msg_queue({'control': 'clean', 'chat_id': chat_id})
                 del self.ai[chat_id]
                 state = ChatState.END  # we finished a dialogue
             # Continue chat
@@ -91,24 +103,20 @@ class ConvAIRLLBot:
 
     def act(self, chat_id, state,  m):
         data = {}
-        message = {
-            'chat_id': chat_id
-        }
-
         if chat_id not in self.ai:
             # Finish chat:
             if m['message']['chat']['id'] == chat_id and m['message']['text'] == '/end':
                 logging.info("Decided to finish chat %s" % chat_id)
                 data['text'] = '/end'
-                data['evaluation'] = {  # let's have the best default value haha
+                data['evaluation'] = {
                     'quality': 5,
                     'breadth': 5,
                     'engagement': 5
                 }
                 storage.store_data(chat_id, chat_history[chat_id])
                 del chat_history[chat_id]
-                message['text'] = json.dumps(data)
-                return message
+                outgoing_msg_queue.put({'data': data, 'chat_id': chat_id})
+                return
             else:
                 logging.info("Dialog not started yet. Do not act.")
                 return
@@ -121,79 +129,171 @@ class ConvAIRLLBot:
         model_name = 'none'
         policyID = -1
         if state == ChatState.START:
-            text = "Hello! I hope you're doing well. I am doing fantastic today! Let me go through the article real quick and we will start talking about it."
+            text = """
+                Hello! I hope you're doing well. I am doing fantastic today!
+                Let me go through the article real quick and we will start
+                talking about it.
+                """
+            # push this response to `outgoing_msg_queue`
+            outgoing_msg_queue.put(
+                {'text': text, 'chat_id': chat_id,
+                    'model_name': model_name, 'policyID': policyID})
         else:
-            # select from our models
-            (text, context, model_name), policyID = mSelect.get_response(
-                chat_id, self.ai[chat_id]['observation'], self.ai[chat_id]['context'])
-            self.ai[chat_id]['context'] = context
-        #texts = ['I love you!', 'Wow!', 'Really?', 'Nice!', 'Hi', 'Hello', '', '/end']
-        #text = texts[random.randint(0, 7)]
-
-        if text.strip() == '':
-            logging.info("Decided to respond with random emoji")
-            data = {
-                'text': random.choice(emoji.UNICODE_EMOJI.keys()),
-                'evaluation': 0,  # 0=nothing, 1=thumbs down, 2=thumbs up
-                'policyID': policyID,
-                'model_name': 'rand_emoji'
-            }
-        else:
-            logging.info("Decided to respond with text: %s, model name %s, policyID %d" % (
-                text, model_name, policyID))
-            data = {
-                'text': text,
-                'evaluation': 0,  # 0=nothing, 1=thumbs down, 2=thumbs up
-                'model_name': model_name,
-                'policyID': policyID
-            }
-
-        message['text'] = json.dumps(data)
-        data['sender'] = 'bot'
-        chat_history[chat_id].append(data)
-        return message
+            # send the message to process queue for processing
+            processing_msg_queue.put({
+                'chat_id': chat_id,
+                'text': self.ai[chat_id]['observation'],
+                'context': self.ai[chat_id]['context'],
+                'allowed_model': 'all'
+            })
 
 
-def main():
+# Initialize
+BOT_ID = conf.bot_token  # !!!!!!! Put your bot id here !!!!!!!
 
-    BOT_ID = conf.bot_token  # !!!!!!! Put your bot id here !!!!!!!
+if BOT_ID is None:
+    raise Exception('You should enter your bot token/id!')
 
-    if BOT_ID is None:
-        raise Exception('You should enter your bot token/id!')
+BOT_URL = os.path.join(conf.bot_endpoint, BOT_ID)
 
-    BOT_URL = os.path.join(conf.bot_endpoint, BOT_ID)
+bot = ConvAIRLLBot()
 
-    bot = ConvAIRLLBot()
-    print "loading models"
-    mSelect.initialize_models()  # should we start this in a new thread instead..?
 
-    # This version of bot.py employs ZMQ sockets to connect to client
-    # For ParlAI integration
-
-    SOCKET_PORT = conf.socket_port
+def consumer():
+    """ ZMQ Consumer Thread. Collect messages from model_selection
+    and respond to Telegram
+    """
     context = zmq.Context()
-    socket = context.socket(zmq.REP)
-    socket.bind("tcp://*:%s" % SOCKET_PORT)
-    
+    socket = context.socket(zmq.PULL)
+    socket.connect(PARENT_PIPE)
+    logging.info("Main pull channel active")
     while True:
-        try:
-            m = socket.recv_json()
-            if m:
+        msg = socket.recv_json()
+        bot.ai[msg['chat_id']]['context'] = msg['context']
+        outgoing_msg_queue.put(msg)
+
+
+def producer():
+    """ ZMQ producer Thread. Push processed user response to bot.
+    """
+    context = zmq.Context()
+    socket = context.socket(zmq.PUSH)
+    socket.connect(PARENT_PULL_PIPE)
+    logging.info("Main push channel active")
+    while True:
+        msg = processing_msg_queue.get()
+        socket.send_json(msg)
+        processing_msg_queue.task_done()
+
+
+def response_receiver(telegram=True):
+    """Receive response from either Telegram or console.
+       Make its own thread for clarity
+    """
+    if telegram:
+        while True:
+            time.sleep(1)
+            logging.debug("Get updates from server")
+            res = requests.get(os.path.join(BOT_URL, 'getUpdates'))
+
+            if res.status_code != 200:
+                logging.info(res.text)
+                res.raise_for_status()
+
+            logging.debug("Got %s new messages" % len(res.json()))
+            for m in res.json():
                 state = ChatState.START  # assume new chat all the time
-                # will become false when we call bot.observe(m), except when it's really a new chat
+                # will become false when we call bot.observe(m),
+                # except when it's really a new chat
                 while state == ChatState.START:
                     logging.info("Process message %s" % m)
                     # return chat_id & the dialogue state
                     chat_id, state = bot.observe(m)
-                    # pass chat_id, dialogue state & message to act upon
-                    new_message = bot.act(chat_id, state, m)
-                    if new_message is not None:
-                        print new_message
-                        socket.send_json(new_message)
-        except Exception as e:
-            logging.error(e)
-            traceback.format_exc()
+                    bot.act(chat_id, state, m)
+    else:
+        # TODO: implement later
+        pass
+
+
+def reply_sender():
+    """ Send reply to Telegram or console
+        Thread: Read from `outgoing_msg_queue` and send to server
+    """
+    while True:
+        msg = outgoing_msg_queue.get()
+        outgoing_msg_queue.task_done()
+        chat_id = msg['chat_id']
+        message = {
+            'chat_id': chat_id
+        }
+        data = {}
+        if 'data' in msg:
+            data = msg['data']
+        else:
+            text = msg['text']
+            model_name = msg['model_name']
+            policyID = msg['policyID']
+
+            if text.strip() == '':
+                logging.info("Decided to respond with random emoji")
+                data = {
+                    'text': random.choice(emoji.UNICODE_EMOJI.keys()),
+                    'evaluation': 0,  # 0=nothing, 1=thumbs down, 2=thumbs up
+                    'policyID': policyID,
+                    'model_name': 'rand_emoji'
+                }
+            else:
+                logging.info("Decided to respond with text: %s, model name %s, policyID %d" % (
+                    text, model_name, policyID))
+                data = {
+                    'text': text,
+                    'evaluation': 0,  # 0=nothing, 1=thumbs down, 2=thumbs up
+                    'model_name': model_name,
+                    'policyID': policyID
+                }
+
+        message['text'] = json.dumps(data)
+        data['sender'] = 'bot'
+        chat_history[chat_id].append(data)
+
+        logging.info("Send response to server.")
+        res = requests.post(os.path.join(BOT_URL, 'sendMessage'),
+                            json=message,
+                            headers={'Content-Type': 'application/json'})
+        if res.status_code != 200:
+            logging.info(res.text)
+            res.raise_for_status()
+
+
+def stop_app():
+    """Broadcast stop signal
+    """
+    processing_msg_queue.put({'control': 'exit'})
 
 
 if __name__ == '__main__':
-    main()
+    """ Start the threads.
+    1. Response reciever thread
+    2. Producer thread. bot -> model_selection
+    3. Consumer thread. model_selection -> bot
+    4. Reply thread. bot -> Telegram
+    """
+    response_receiver_thread = Thread(target=response_receiver, args=(True,))
+    response_receiver_thread.daemon = True
+    response_receiver_thread.start()
+    producer_thread = Thread(target=producer)
+    producer_thread.daemon = True
+    producer_thread.start()
+    consumer_thread = Thread(target=consumer)
+    consumer_thread.daemon = True
+    consumer_thread.start()
+    reply_thread = Thread(target=reply_sender)
+    reply_thread.daemon = True
+    reply_thread.start()
+    try:
+        while True:
+            time.sleep(1)
+    except (KeyboardInterrupt, SystemExit):
+        logging.info("Stopping model response selector")
+        stop_app()
+        logging.info("Closing app")

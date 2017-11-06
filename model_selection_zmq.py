@@ -1,8 +1,6 @@
 import zmq
 import sys
 import config
-conf = config.get_config()
-from models.wrapper import HRED_Wrapper, Dual_Encoder_Wrapper, HREDQA_Wrapper, CandidateQuestions_Wrapper, DumbQuestions_Wrapper, DRQA_Wrapper, NQG_Wrapper, Echo_Wrapper
 import random
 import copy
 import spacy
@@ -14,12 +12,14 @@ from Queue import Queue
 from threading import Thread
 from multiprocessing import Process
 import uuid
+from models.wrapper import HRED_Wrapper, Dual_Encoder_Wrapper, HREDQA_Wrapper, CandidateQuestions_Wrapper, DumbQuestions_Wrapper, DRQA_Wrapper, NQG_Wrapper, Echo_Wrapper
 import logging
-import traceback
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(name)s.%(funcName)s +%(lineno)s: %(levelname)-8s [%(process)d] %(message)s',
 )
+conf = config.get_config()
+
 
 # Script to select model conversation
 # Initialize all the models here and then reply with the best answer
@@ -206,7 +206,8 @@ class ModelClient(Process):
         self.producer_context = zmq.Context()
         self.consumer_context = zmq.Context()
         try:
-            logging.info("Starting {} response channel".format(self.model_name))
+            logging.info(
+                "Starting {} response channel".format(self.model_name))
             resp_thread = Thread(target=self.respond)
             resp_thread.daemon = True
             resp_thread.start()
@@ -221,7 +222,7 @@ class ModelClient(Process):
             logging.info("Shutting down {} client".format(self.model_name))
 
 
-## Initialize variables
+# Initialize variables
 
 article_text = {}     # map from chat_id to article text
 candidate_model = {}  # map from chat_id to a simple model for the article
@@ -238,7 +239,9 @@ model_responses = {}
 # Debugging
 modelIds = [ModelID.ECHO]
 # initialize only this model to catch the patterns
-dumb_qa_model = DumbQuestions_Wrapper('', conf.dumb['dict_file'], ModelID.DUMB_QA) 
+dumb_qa_model = DumbQuestions_Wrapper(
+    '', conf.dumb['dict_file'], ModelID.DUMB_QA)
+
 
 def start_models():
     """ Warmup models in separate Process
@@ -248,12 +251,14 @@ def start_models():
     job = {'control': 'init', 'topic': topic}
     job_queue.put(job)
 
+
 def stop_models():
     """ Send command to close the processes first
     """
     topic = 'user_response'
     job = {'control': 'exit', 'topic': topic}
     job_queue.put(job)
+
 
 def submit_job(job_type='preprocess', to_model='all',
                context=None, text=None, chat_id=None, article=None):
@@ -271,6 +276,7 @@ def submit_job(job_type='preprocess', to_model='all',
            'text': text, 'chat_id': chat_id, 'article': article}
     job_queue.put(job)
 
+
 def act():
     """ On getting a response from a model, add it to the
     chat_id model_responses list.
@@ -284,10 +290,11 @@ def act():
         packet = socket.recv_json()
         if packet['chat_id'] in model_responses:
             model_responses[packet['chat_id']
-                                 ][packet['model_name']] = packet
+                            ][packet['model_name']] = packet
         else:
             logging.info('Discarding message from model {} for chat id {}'.format(
                 packet['model_name'], packet['chat_id']))
+
 
 def responder():
     context = zmq.Context()
@@ -302,6 +309,7 @@ def responder():
         payload = mogrify(topic, job)
         socket.send(payload)
 
+
 def consumer():
     """ ZMQ Consumer. Collect jobs from parent and run `get_response`
     """
@@ -309,19 +317,21 @@ def consumer():
     socket = context.socket(zmq.PULL)
     socket.connect(PARENT_PULL_PIPE)
     logging.info("Parent pull channel active")
-    while True:
+    is_running = True
+    while is_running:
         msg = socket.recv_json()
         if 'control' in msg:
             if msg['control'] == 'exit':
                 logging.info("Received exit command. Closing all models")
                 stop_models()
                 logging.info("Exiting")
-                sys.exit(0)
+                is_running = False
             if msg['control'] == 'clean':
                 clean(msg['chat_id'])
         else:
             get_response(msg['chat_id'], msg['text'],
-                              msg['context'], msg['allowed_model'])
+                         msg['context'], msg['allowed_model'])
+
 
 def producer():
     """ ZMQ Response producer. Push response to bot callee.
@@ -335,12 +345,14 @@ def producer():
         socket.send_json(msg)
         job_queue.task_done()
 
+
 def clean(chat_id):
     del article_text[chat_id]
     del candidate_model[chat_id]
     del article_nouns[chat_id]
     del boring_count[chat_id]
     policy_mode = Policy.NONE
+
 
 def strip_emojis(str):
     tokens = set(list(str))
@@ -352,6 +364,8 @@ def strip_emojis(str):
     return str, None
 
 # TODO: set allowed_model for model based debugging
+
+
 def get_response(chat_id, text, context, allowed_model=None):
     # create a chat_id + unique ID candidate responses field
     chat_unique_id = chat_id + '_' + uuid.uuid4()
@@ -378,26 +392,26 @@ def get_response(chat_id, text, context, allowed_model=None):
 
         # fire global preprocess call
         submit_job(job_type='preprocess',
-                        article=article_text[chat_id],
-                        chat_id=chat_id)
+                   article=article_text[chat_id],
+                   chat_id=chat_id)
         # fire candidate question and NQG
         submit_job(job_type='get_response',
-                        to_model=ModelID.CAND_QA,
-                        chat_id=chat_id,
-                        context=context,
-                        text=text)
+                   to_model=ModelID.CAND_QA,
+                   chat_id=chat_id,
+                   context=context,
+                   text=text)
         submit_job(job_type='get_response',
-                        to_model=ModelID.NQG,
-                        chat_id=chat_id,
-                        context=context,
-                        text=text)
+                   to_model=ModelID.NQG,
+                   chat_id=chat_id,
+                   context=context,
+                   text=text)
 
     else:
         # fire global query
         submit_job(job_type='get_response',
-                        chat_id=chat_id,
-                        context=context,
-                        text=text)
+                   chat_id=chat_id,
+                   context=context,
+                   text=text)
 
     # wait for responses to come in
     # if we have answer ready before the wait period, exit and return the answer
@@ -499,6 +513,7 @@ def get_response(chat_id, text, context, allowed_model=None):
     # clean the unique chat ID
     del model_responses[chat_unique_id]
 
+
 if __name__ == '__main__':
     """Run the main calling function:
             1. Initialize all the models
@@ -507,31 +522,31 @@ if __name__ == '__main__':
             4. Child models publish channel `responder`
             5. Child models pull channel `act`
     """
-    ## 1. Initializing the models
+    # 1. Initializing the models
     mps = []
     for model in modelIds:
         wx = ModelClient(model)
         mps.append(wx)
     for mp in mps:
-        mp.start() 
-    ## 2. Parent -> Bot publish channel
-    child_publish_thread = Thread(target = responder)
+        mp.start()
+    # 2. Parent -> Bot publish channel
+    child_publish_thread = Thread(target=responder)
     child_publish_thread.daemon = True
     child_publish_thread.start()
-    ## 3. Bot -> Parent push channel
+    # 3. Bot -> Parent push channel
     child_pull_thread = Thread(target=act)
     child_pull_thread.daemon = True
     child_pull_thread.start()
-    ## 4. Parent -> Callee push channel
+    # 4. Parent -> Callee push channel
     parent_push_thread = Thread(target=producer)
     parent_push_thread.daemon = True
     parent_push_thread.start()
-    ## 5. Callee -> Parent pull channel
+    # 5. Callee -> Parent pull channel
     parent_pull_thread = Thread(target=consumer)
     parent_pull_thread.daemon = True
     parent_pull_thread.start()
 
-    ## Model Init
+    # Model Init
     start_models()
 
     try:
@@ -541,5 +556,3 @@ if __name__ == '__main__':
         logging.info("Sending shutdown signal to all models")
         stop_models()
         logging.info("Shutting down master")
-
-
