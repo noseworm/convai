@@ -37,7 +37,7 @@ def query_db():
         # get the same conversation from the server side (db.dialogs)
         d_servr = list(db.dialogs.find({'dialogId': d_id}))
         if len(d_servr) > 1:
-            print "Error: two dialogs with same id (%s)!" % did
+            print "Error: two dialogs with same id (%s)!" % d_id
             continue
         elif len(d_servr) < 1:
             print "Warning: no dialog found in db.dialogs for dialogId %s." % d_id
@@ -224,10 +224,10 @@ def main():
 
     # print '\n', json.dumps(full_data[:5], indent=4, sort_keys=True)
 
-    print "\nSaving to pkl file..."
+    print "\nSaving to json file..."
     file_prefix = "voted" if args.voted_only else "full"
-    with open('%s_data_db_%s.pkl' % (file_prefix, str(time.time())), 'wb') as handle:
-        pkl.dump(full_data, handle, protocol=pkl.HIGHEST_PROTOCOL)
+    with open('./data/%s_data_db_%s.json' % (file_prefix, str(time.time())), 'wb') as handle:
+        json.dump(full_data, handle)
     print "done."
 
 

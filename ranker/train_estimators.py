@@ -1,11 +1,10 @@
 import tensorflow as tf
 import numpy as np
 import cPickle as pkl
-
 import argparse
 import pyprind
-import random
 import copy
+import json
 import time
 import sys
 import os
@@ -73,6 +72,7 @@ OPTIMIZERS = {
 
 
 def get_data(files, target, feature_list=None, voted_only=False, val_prop=0.1, test_prop=0.1, save=True):
+    # TODO: rewrite to support precomputed feature json files!!
     """
     Load data to train ranker. Build `k` fold cross validation train/val data
     :param files: list of data files to load
@@ -96,14 +96,14 @@ def get_data(files, target, feature_list=None, voted_only=False, val_prop=0.1, t
     data = []
     file_ids = []
     for data_file in files:
-        if voted_only and data_file.startswith('voted_data_'):
+        if voted_only and 'data/voted_data_' in data_file:
             with open(data_file, 'rb') as handle:
-                data.extend(pkl.load(handle))
+                data.extend(json.load(handle))
                 # get the time id of the data
                 file_ids.append(data_file.split('_')[-1].replace('pkl', ''))
-        elif (not voted_only) and data_file.startswith('full_data_'):
+        elif (not voted_only) and 'data/full_data_' in data_file:
             with open(data_file, 'rb') as handle:
-                data.extend(pkl.load(handle))
+                data.extend(json.load(handle))
                 # get the time id of the data
                 file_ids.append(data_file.split('_')[-1].replace('pkl', ''))
         else:
@@ -201,7 +201,7 @@ def get_data(files, target, feature_list=None, voted_only=False, val_prop=0.1, t
                 file_name += file_id
             print "saving in %spkl..." % file_name
             with open(file_name+'pkl', 'wb') as handle:
-                pkl.dump(
+                json.dump(
                     [trains, valids, (test_x, test_y), feature_list],
                     handle,
                     pkl.HIGHEST_PROTOCOL

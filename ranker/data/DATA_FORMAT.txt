@@ -24,7 +24,7 @@ Note that the data from the database will keep increasing over time.
 # data format
 ###
 
-- each .pkl file is a python list.
+- each .json file is a python list.
 
 - each item in the list is a dictionary that has the following format:
 {
