@@ -352,8 +352,11 @@ class DumbQuestions_Wrapper(Model_Wrapper):
         logging.info('Generating dumb question for user %s.' % user_id)
         ctext = self._format_to_model(text, len(context))
         context.append(ctext)
-        key = self.getMatch(text)
-        response = random.choice(self.data[key])
+        if self.isMatch(text):
+            key = self.getMatch(text)
+            response = random.choice(self.data[key])
+        else:
+            response = ''
         context.append(self._format_to_model(response, len(context)))
         return response, context
 

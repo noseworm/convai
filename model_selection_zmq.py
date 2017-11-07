@@ -245,6 +245,8 @@ model_responses = {}
 #                 ModelID.FOLLOWUP_QA, ModelID.DUMB_QA, ModelID.DRQA]
 # Debugging
 modelIds = [ModelID.ECHO, ModelID.CAND_QA, ModelID.HRED_TWITTER, ModelID.FOLLOWUP_QA, ModelID.DUMB_QA]
+#modelIds = [ModelID.ECHO, ModelID.CAND_QA, ModelID.DUMB_QA]
+
 # initialize only this model to catch the patterns
 dumb_qa_model = DumbQuestions_Wrapper(
     '', conf.dumb['dict_file'], ModelID.DUMB_QA)
@@ -532,13 +534,9 @@ def get_response(chat_id, text, context, allowed_model=None):
             # if the user didn't ask a question, also consider hred-qa
             models.append(ModelID.FOLLOWUP_QA)
 
-        chosen_model = random.choice(models)
-        while (chosen_model not in model_responses[chat_unique_id]) and len(models) > 0:
-            models.remove(chosen_model)
-            if len(models) > 0:
-                chosen_model = random.choice(models)
-
-        if chosen_model in model_responses[chat_unique_id]:
+        available_models = list(set(model_responses[chat_unique_id]).intersection(models))
+        if len(available_models) > 0:
+            chosen_model = random.choice(available_models)
             response = model_responses[chat_unique_id][chosen_model]
 
         response['policyID'] = Policy.OPTIMAL
