@@ -15,11 +15,12 @@ def main(args):
         print "%s \t avg. train: %g \t avg. valid: %g \t args: %s" % (model_id, np.mean(max_trains), np.mean(max_valids), args[1:])
 
         with open('./%s_valid%g.txt' % (model_id, np.mean(max_valids)), 'w') as handle:
+            handle.write("model %s\n" % model_id)
             handle.write("avg. train: %g\n" % np.mean(max_trains))
             handle.write("avg. valid: %g\n" % np.mean(max_valids))
             handle.write("args: %s\n" % args[1:])
             handle.write("features:\n%s\n" % args[0][-1])
-
+            handle.write("-------------\n")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

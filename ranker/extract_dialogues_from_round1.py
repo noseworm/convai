@@ -194,10 +194,10 @@ def main():
 
     # print json.dumps(full_data[4:20], indent=4, sort_keys=True)
 
-    print "\nSaving to pkl file..."
+    print "\nSaving to json file..."
     file_prefix = "voted" if args.voted_only else "full"
-    with open('%s_data_round1_%s.pkl' % (file_prefix, str(time.time())), 'wb') as handle:
-        pkl.dump(full_data, handle, protocol=pkl.HIGHEST_PROTOCOL)
+    with open('./data/%s_data_round1_%s.json' % (file_prefix, str(time.time())), 'wb') as handle:
+        json.dump(full_data, handle)
     print "done."
 
 

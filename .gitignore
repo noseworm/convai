@@ -29,3 +29,5 @@ leaderboard.md
 data/wikipedia/
 ranker/models/*.ckpt*
 ranker/models/checkpoint
+ranker/data/*.json
+ranker/data/*.features/
