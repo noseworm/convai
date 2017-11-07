@@ -61,6 +61,7 @@ class Policy:
     HREDx2_DRQA = 5  # hred-reddit:0.25 & hred-twitter:0.25 & DrQA:0.5
     DE_DRQA = 6      # DualEncoder:0.5 & DrQA:0.5
     START = 7
+    FIXED = 8        # when allowed_model = True
 
 
 class ModelID:
@@ -73,6 +74,7 @@ class ModelID:
     FOLLOWUP_QA = 'followup_qa'
     CAND_QA = 'candidate_question'
     ECHO = 'echo_model'  # just for debugging purposes
+    ALL = 'all'          # stub to represent all allowable models
 
 
 ALL_POLICIES = [Policy.OPTIMAL, Policy.HREDx2, Policy.HREDx3,
@@ -239,10 +241,10 @@ response_queue = Queue()
 model_responses = {}
 # self.models = [self.hred_twitter, self.hred_reddit,
 #               self.dual_enc, self.qa_hred, self.dumb_qa, self.drqa]
-# self.modelIds = [ModelID.HRED_TWITTER, ModelID.HRED_REDDIT, ModelID.DUAL_ENCODER,
+# modelIds = [ModelID.HRED_TWITTER, ModelID.HRED_REDDIT, ModelID.DUAL_ENCODER,
 #                 ModelID.FOLLOWUP_QA, ModelID.DUMB_QA, ModelID.DRQA]
 # Debugging
-modelIds = [ModelID.ECHO, ModelID.CAND_QA]
+modelIds = [ModelID.ECHO, ModelID.CAND_QA, ModelID.HRED_TWITTER, ModelID.FOLLOWUP_QA, ModelID.DUMB_QA]
 # initialize only this model to catch the patterns
 dumb_qa_model = DumbQuestions_Wrapper(
     '', conf.dumb['dict_file'], ModelID.DUMB_QA)
@@ -265,7 +267,7 @@ def stop_models():
     job_queue.put(job)
 
 
-def submit_job(job_type='preprocess', to_model='all',
+def submit_job(job_type='preprocess', to_model=ModelID.ALL,
                context=None, text='', chat_id='', chat_unique_id='',
                article=''):
     """ Submit Jobs to job queue, which will be consumed by the responder
@@ -273,7 +275,7 @@ def submit_job(job_type='preprocess', to_model='all',
     :to_model = all / specific model name
     """
     topic = 'user_response'
-    if to_model != 'all':
+    if to_model != ModelID.ALL:
         topic = to_model
     # check if article is spacy instance
     if article and not isinstance(article, basestring):
@@ -282,7 +284,7 @@ def submit_job(job_type='preprocess', to_model='all',
         context = []
     job = {'type': job_type, 'topic': topic, 'context': context,
             'text': text, 'chat_id': chat_id, 'chat_unique_id': chat_unique_id,
-            'article': article}
+            'article_text': article}
     if job_type == 'preprocess' or job_type == 'exit':
         job['control'] = job_type
 
@@ -451,7 +453,16 @@ def get_response(chat_id, text, context, allowed_model=None):
         else:
             # TODO: Run NN Model selection approximator here on whichever
             # responses are coming in
-            if len(set(model_responses[chat_unique_id].keys())
+            # if allowed model is not all, then wait for it to arrive
+            # by elongating the wait_for time (useful for debugging certain
+            # models)
+            if allowed_model and allowed_model != ModelID.ALL:
+                if allowed_model in model_responses[chat_unique_id]:
+                    done_processing = True
+                    break
+                else:
+                    wait_for += 1
+            elif len(set(model_responses[chat_unique_id].keys())
                     .intersection(set(modelIds))) == len(modelIds):
                 done_processing = True
                 break
@@ -469,30 +480,36 @@ def get_response(chat_id, text, context, allowed_model=None):
         response['policyID'] = Policy.START
     else:
         # TODO: Replace this with ranking. Now using the optimal policy
+        # check if allowed_model is set, then only reply from the allowed
+        # model. This is done for debugging.
+        # TODO: Probably remove this before final submission?
+        if allowed_model and allowed_model != ModelID.ALL:
+            response = model_responses[chat_unique_id][allowed_model]
+            response['policyID'] = Policy.FIXED
+        else:
+            # if text contains emoji's, strip them
+            text, emojis = strip_emojis(text)
+            if emojis and len(text.strip()) < 1:
+                # if text had only emoji, give back the emoji itself
+                # NOTE: shouldn't we append the `resp` (in this case emoji)
+                # to the context like everywhere else?
+                response = {'response': emojis, 'context': context,
+                            'model_name': 'emoji', 'policy': policy_mode}
 
-        # if text contains emoji's, strip them
-        text, emojis = strip_emojis(text)
-        if emojis and len(text.strip()) < 1:
-            # if text had only emoji, give back the emoji itself
-            # NOTE: shouldn't we append the `resp` (in this case emoji)
-            # to the context like everywhere else?
-            response = {'response': emojis, 'context': context,
-                        'model_name': 'emoji', 'policy': policy_mode}
-
-        # if query falls under dumb questions, respond appropriately
-        elif dumb_qa_model.isMatch(text) and Model.DUMB_QA in model_responses:
-            response = model_responses[
-                chat_unique_id][ModelID.DUMB_QA]
-        elif '?' in text:
-            # get list of common nouns between article and question
-            common = list(set(article_nouns[chat_id]).intersection(
-                set(text.split(' '))))
-            print 'common nouns between question and article:', common
-            # if there is a common noun between question and article
-            # select DrQA
-            if len(common) > 0 and Model.DRQA in model_responses:
+            # if query falls under dumb questions, respond appropriately
+            elif dumb_qa_model.isMatch(text) and ModelID.DUMB_QA in model_responses:
                 response = model_responses[
-                    chat_unique_id][ModelID.DRQA]
+                    chat_unique_id][ModelID.DUMB_QA]
+            elif '?' in text:
+                # get list of common nouns between article and question
+                common = list(set(article_nouns[chat_id]).intersection(
+                    set(text.split(' '))))
+                print 'common nouns between question and article:', common
+                # if there is a common noun between question and article
+                # select DrQA
+                if len(common) > 0 and ModelID.DRQA in model_responses:
+                    response = model_responses[
+                        chat_unique_id][ModelID.DRQA]
 
     if not response:
         # if text contains 2 words or less, add 1 to the bored count
@@ -525,6 +542,13 @@ def get_response(chat_id, text, context, allowed_model=None):
             response = model_responses[chat_unique_id][chosen_model]
 
         response['policyID'] = Policy.OPTIMAL
+
+    # if still no response, then just send a random emoji
+    if not response or 'text' not in response:
+        logging.warn("Failure to obtain a response, using echo model")
+        response = model_responses[chat_unique_id][ModelID.ECHO]
+        response['policyID'] = Policy.FIXED
+
 
     # Now we have a response, so send it back to bot host
     # Again use ZMQ, because lulz
