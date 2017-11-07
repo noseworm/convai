@@ -10,7 +10,7 @@ import emoji
 import json
 from Queue import Queue
 from threading import Thread
-from multiprocessing import Process
+from multiprocessing import Process, Pool
 import uuid
 from models.wrapper import HRED_Wrapper, Dual_Encoder_Wrapper, HREDQA_Wrapper, CandidateQuestions_Wrapper, DumbQuestions_Wrapper, DRQA_Wrapper, NQG_Wrapper, Echo_Wrapper
 import logging
@@ -99,14 +99,14 @@ PARENT_PIPE = 'ipc:///tmp/parent_push.pipe'
 PARENT_PULL_PIPE = 'ipc:///tmp/parent_pull.pipe'
 
 
-class ModelClient(Process):
+class ModelClient():
     """
     Client Process for individual models. Initialize the model
     and subscribe to channel to listen for updates
     """
 
     def __init__(self, model_name):
-        Process.__init__(self)
+        #Process.__init__(self)
         self.model_name = model_name
         # select and initialize models
         if model_name == ModelID.HRED_REDDIT:
@@ -152,6 +152,7 @@ class ModelClient(Process):
         self.queue = Queue()
         self.is_running = True
         self.warmup()
+        self.run()
 
     def warmup(self):
         """ Warm start the models before execution """
@@ -244,7 +245,8 @@ model_responses = {}
 # modelIds = [ModelID.HRED_TWITTER, ModelID.HRED_REDDIT, ModelID.DUAL_ENCODER,
 #                 ModelID.FOLLOWUP_QA, ModelID.DUMB_QA, ModelID.DRQA]
 # Debugging
-modelIds = [ModelID.ECHO, ModelID.CAND_QA, ModelID.HRED_TWITTER, ModelID.FOLLOWUP_QA, ModelID.DUMB_QA]
+modelIds = [ModelID.ECHO, ModelID.CAND_QA, ModelID.HRED_TWITTER,
+        ModelID.FOLLOWUP_QA, ModelID.DUMB_QA, ModelID.DRQA, ModelID.NQG]
 #modelIds = [ModelID.ECHO, ModelID.CAND_QA, ModelID.DUMB_QA]
 
 # initialize only this model to catch the patterns
@@ -500,6 +502,7 @@ def get_response(chat_id, text, context, allowed_model=None):
 
             # if query falls under dumb questions, respond appropriately
             elif dumb_qa_model.isMatch(text) and ModelID.DUMB_QA in model_responses:
+                logging.info("Matching preset patterns")
                 response = model_responses[
                     chat_unique_id][ModelID.DUMB_QA]
             elif '?' in text:
@@ -565,11 +568,13 @@ if __name__ == '__main__':
     """
     # 1. Initializing the models
     mps = []
+    mp_pool = Pool(processes=len(modelIds))
     for model in modelIds:
-        wx = ModelClient(model)
-        mps.append(wx)
-    for mp in mps:
-        mp.start()
+        #wx = ModelClient(model)
+        #mps.append(wx)
+        mp_pool.apply_async(ModelClient, args=(model,))
+    #for mp in mps:
+    #    mp.start()
     # 2. Parent -> Bot publish channel
     child_publish_thread = Thread(target=responder)
     child_publish_thread.daemon = True
@@ -591,9 +596,13 @@ if __name__ == '__main__':
     start_models()
 
     try:
-        for mp in mps:
-            mp.join()
+        mp_pool.close()
+        mp_pool.join()
+        #for mp in mps:
+        #    mp.join()
     except (KeyboardInterrupt, SystemExit):
         logging.info("Sending shutdown signal to all models")
         stop_models()
+        for mp in mps:
+            mp.terminate()
         logging.info("Shutting down master")
