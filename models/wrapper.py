@@ -27,6 +27,7 @@ logging.basicConfig(
 )
 
 NQG_ENDURL = 'http://localhost:8080'
+DRQA_ENDURL = 'http://0.0.0.0:8888'
 
 
 class Model_Wrapper(object):
@@ -386,7 +387,7 @@ class DRQA_Wrapper(Model_Wrapper):
         context.append(ctext)
         response = ''
         try:
-            res = requests.post('http://localhost:8888/ask',
+            res = requests.post(DRQA_ENDURL+'/ask',
                                 json={'article': article.text, 'question': text})
             res_data = res.json()
             response = res_data['reply']['text']
