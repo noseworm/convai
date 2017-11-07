@@ -4,14 +4,18 @@ import operator
 import random
 import logging
 import codecs
-
+import spacy
+nlp = spacy.load('en')
 logger = logging.getLogger(__name__)
 
 # article should be a spacy converted article
 # dataset file should have each candidate sentence in one line
 class CandidateQuestions(object):
     def __init__(self,article,dataset_file,top_n=3):
-        self.doc = article
+        if isinstance(article,basestring):
+            self.doc = nlp(unicode(article))
+        else:
+            self.doc = article
         self.entities = [] # list of spacy tokens having entities
         self.entities_str = [] # string of the tokens
         self._get_entities()

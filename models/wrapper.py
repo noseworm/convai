@@ -53,7 +53,7 @@ class Model_Wrapper(object):
         # strip, split, join to remove extra spaces
         return ' '.join(text.strip().split())
 
-    def get_response(self, user_id, text, context, article=None):
+    def get_response(self, user_id='', text='', context=None, article='', **kwargs):
         """
         Generate a new response, and add it to the context
         :param article:
@@ -61,12 +61,13 @@ class Model_Wrapper(object):
         :param text: the new utterance we just received
         :type text: str
         :param context: queue of conversation history: sliding window of most recent utterances
-        :type context: collections.dequeue
+        :type context: array
+        :type kwargs extra params
         :return: the generated response as well as the new context
         """
         pass  # TO BE IMPLEMENTED IN SUB-CLASSES
 
-    def preprocess(self, user_id, article=None):
+    def preprocess(self, user_id='', article=None, **kwargs):
         """
         Preprocess before model responses, needed for some models (NQG)
         """
@@ -94,7 +95,7 @@ class HRED_Wrapper(Model_Wrapper):
         logger.info('Model built (%s).' % name)
 
     # must contain this method for the bot
-    def get_response(self, user_id, text, context, article=None):
+    def get_response(self, user_id='', text='', context=None, article='', **kwargs):
         logger.info('--------------------------------')
         logger.info('Generating HRED response for user %s.' % user_id)
         text = self._format_to_model(text, len(context))
@@ -203,7 +204,7 @@ class Dual_Encoder_Wrapper(Model_Wrapper):
             act_penalty=args.act_penalty  # default 500
         )
 
-    def get_response(self, user_id, text, context, article=None):
+    def get_response(self, user_id='', text='', context=None, article='', **kwargs):
         logger.info('--------------------------------')
         logger.info('Generating DE response for user %s.' % user_id)
         text = self._format_to_model(text, len(context))
@@ -259,7 +260,7 @@ class HREDQA_Wrapper(Model_Wrapper):
         # strip, split, join to remove extra spaces
         return ' '.join(text.strip().split())
 
-    def get_response(self, user_id, text, context, article=None):
+    def get_response(self, user_id='', text='', context=None, article='', **kwargs):
         logger.info('------------------------------------')
         logger.info('Generating Followup question for user %s.' % user_id)
         text = self._format_to_model(text, len(context))
@@ -288,7 +289,7 @@ class CandidateQuestions_Wrapper(Model_Wrapper):
                                  "Apparently I am too dumb for this article. What's it about?"]
         self.models = {}
 
-    def preprocess(self, chat_id, article_text):
+    def preprocess(self, chat_id='', article_text='', **kwargs):
         assert isinstance(article_text, basestring)
         self.models[chat_id] = CandidateQuestions(
             article_text, self.dict_fname)
@@ -304,17 +305,20 @@ class CandidateQuestions_Wrapper(Model_Wrapper):
         # strip, split, join to remove extra spaces
         return ' '.join(text.strip().split())
 
-    def get_response(self, chat_id, text, context, article=None):
+    def get_response(self, chat_id='', text='', context=None, article='', **kwargs):
         logger.info('------------------------------------')
         logger.info('Generating candidate question for chat %s.' % chat_id)
         text = self._format_to_model(text, len(context))
         logger.info(text)
         context.append(text)
 
-        response = self.models[chat_id].get_response()
-        if len(response) < 1:
-            # select canned response
-            response = random.choice(self.canned_questions)
+        if chat_id in self.models:
+            response = self.models[chat_id].get_response()
+            if len(response) < 1:
+                # select canned response
+                response = random.choice(self.canned_questions)
+        else:
+            response = 'What is this article about?'  # default
         context.append(self._format_to_model(response, len(context)))
         return response, context
 
@@ -338,7 +342,7 @@ class DumbQuestions_Wrapper(Model_Wrapper):
                 return key
         return False
 
-    def get_response(self, user_id, text, context):
+    def get_response(self, user_id='', text='', context=None, **kwargs):
         logger.info('------------------------------------')
         logger.info('Generating dumb question for user %s.' % user_id)
         ctext = self._format_to_model(text, len(context))
@@ -367,7 +371,7 @@ class DRQA_Wrapper(Model_Wrapper):
                 return key
         return False
 
-    def get_response(self, user_id, text, context, article=None):
+    def get_response(self, user_id='', text='', context='', article=None, **kwargs):
         logger.info('------------------------------------')
         logger.info('Generating DRQA answer for user %s.' % user_id)
         ctext = self._format_to_model(text, len(context))
@@ -390,7 +394,7 @@ class NQG_Wrapper(Model_Wrapper):
         super(NQG_Wrapper, self).__init__(model_prefix, name)
         self.questions = {}
 
-    def preprocess(self, chat_id, article_text):
+    def preprocess(self, chat_id='', article_text='', **kwargs):
         # extract all sentences from the article
         logger.info('Preprocessing the questions for this article')
         # check condition if we use Spacy
@@ -408,7 +412,7 @@ class NQG_Wrapper(Model_Wrapper):
             logger.info('Error in NQG article fetching')
             logger.error(e)
 
-    def get_response(self, user_id, text, context, article=None):
+    def get_response(self, user_id='', text='', context=None, article=None, **kwargs):
         logger.info('----------------------------------------')
         logger.info('Generating NQG question for user %s.' % user_id)
         response = ''
@@ -428,7 +432,7 @@ class Echo_Wrapper(Model_Wrapper):
     def __init__(self, model_prefix, dict_fname, name):
         super(Echo_Wrapper, self).__init__(model_prefix, name)
 
-    def get_response(self, user_id, text, context, article=None):
+    def get_response(self, user_id='', text='', context=None, article=None, **kwargs):
         logger.info('------------------------------------')
         logger.info('Generating Echo response for user %s.' % user_id)
         text = self._format_to_model(text, len(context))

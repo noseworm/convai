@@ -80,6 +80,7 @@ class ConvAIRLLBot:
                 logging.info("Start new chat #%s" % self.chat_id)
                 state = ChatState.START  # we started a new dialogue
                 chat_history[chat_id] = []
+                logging.info("started new chat with {}".format(chat_id))
             else:
                 logging.info("chat not started yet. Ignore message")
         # Not a new chat:
@@ -111,8 +112,9 @@ class ConvAIRLLBot:
                     'breadth': 5,
                     'engagement': 5
                 }
-                storage.store_data(chat_id, chat_history[chat_id])
-                del chat_history[chat_id]
+                if chat_id in chat_history:
+                    storage.store_data(chat_id, chat_history[chat_id])
+                    del chat_history[chat_id]
                 outgoing_msg_queue.put({'data': data, 'chat_id': chat_id})
                 return
             else:
@@ -127,12 +129,7 @@ class ConvAIRLLBot:
         model_name = 'none'
         policyID = -1
         if state == ChatState.START:
-            text = """
-                Hello! I hope you're doing well. I am doing fantastic today!
-                Let me go through the article real quick and we will start
-                talking about it.
-                """
-            text = text.strip('\n')
+            text = "Hello! I hope you're doing well. I am doing fantastic today! Let me go through the article real quick and we will start talking about it."
             # push this response to `outgoing_msg_queue`
             outgoing_msg_queue.put(
                 {'text': text, 'chat_id': chat_id,
@@ -256,7 +253,9 @@ def reply_sender():
 
         message['text'] = json.dumps(data)
         data['sender'] = 'bot'
-        chat_history[chat_id].append(data)
+        # if chat has ended, then no need to put the chat history
+        if chat_id in chat_history:
+            chat_history[chat_id].append(data)
 
         logging.info("Send response to server.")
         res = requests.post(os.path.join(BOT_URL, 'sendMessage'),
