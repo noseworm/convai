@@ -365,6 +365,7 @@ class DumbQuestions_Wrapper(Model_Wrapper):
 class DRQA_Wrapper(Model_Wrapper):
     def __init__(self, model_prefix, dict_fname, name):
         super(DRQA_Wrapper, self).__init__(model_prefix, name)
+        self.articles = {}
 
     # check if user text is match to one of the keys
     def isMatch(self, text):
@@ -373,6 +374,11 @@ class DRQA_Wrapper(Model_Wrapper):
                 return True
         return False
 
+    def preprocess(self, chat_id='', article_text='', **kwargs):
+        logging.info("Saving the article for this chat state")
+        logging.info("Saving : {}".format(article_text))
+        self.articles[chat_id] = article_text
+    
     # return the key which matches
     def getMatch(self, text):
         for key, value in self.data.iteritems():
@@ -380,15 +386,22 @@ class DRQA_Wrapper(Model_Wrapper):
                 return key
         return False
 
-    def get_response(self, user_id='', text='', context='', article=None, **kwargs):
+    
+    def get_response(self, user_id='', text='', context='', article='', **kwargs):
         logging.info('------------------------------------')
         logging.info('Generating DRQA answer for user %s.' % user_id)
         ctext = self._format_to_model(text, len(context))
         context.append(ctext)
         response = ''
+        if not isinstance(article,basestring):
+            article = str(article)
+        if len(article) == 0:
+            logging.info("DRQA taking saved article")
+            article = self.articles[user_id]
+        logging.info("DRQA : article {}".format(article))
         try:
             res = requests.post(DRQA_ENDURL+'/ask',
-                                json={'article': article.text, 'question': text})
+                                json={'article': article, 'question': text})
             res_data = res.json()
             response = res_data['reply']['text']
         except Exception as e:

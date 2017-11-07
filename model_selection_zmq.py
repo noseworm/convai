@@ -421,22 +421,29 @@ def get_response(chat_id, text, context, allowed_model=None):
                    chat_id=chat_id,
                    chat_unique_id=chat_unique_id,
                    context=context,
-                   text=text)
+                   text='')
         submit_job(job_type='get_response',
                    to_model=ModelID.NQG,
                    chat_id=chat_id,
                    chat_unique_id=chat_unique_id,
                    context=context,
-                   text=text)
+                   text='')
 
     else:
         # fire global query
-        submit_job(job_type='get_response',
-                   chat_id=chat_id,
-                   chat_unique_id=chat_unique_id,
-                   context=context,
-                   text=text)
-
+        if not allowed_model or allowed_model == ModelID.ALL:
+            submit_job(job_type='get_response',
+                       chat_id=chat_id,
+                       chat_unique_id=chat_unique_id,
+                       context=context,
+                       text=text)
+        else:
+            submit_job(job_type='get_response',
+                       to_model=allowed_model,
+                       chat_id=chat_id,
+                       chat_unique_id=chat_unique_id,
+                       context=context,
+                       text=text)
     # wait for responses to come in
     # if we have answer ready before the wait period, exit and return the answer
     done_processing = False
