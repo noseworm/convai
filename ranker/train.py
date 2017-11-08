@@ -65,7 +65,7 @@ def get_data(files, target, feature_list=None, val_prop=0.1, test_prop=0.1):
     """
     assert target in ['R', 'r'], "Unknown target: %s" % target
 
-    print "\nLoading data..."
+    print "Loading data..."
     raw_data = {}  # map file name to list of dictionaries
     ''' FORMAT:
     {
@@ -357,7 +357,7 @@ def main(args):
         data = get_data(args.data, 'r')
         n_folds = len(data[0])
 
-        print "\nBuilding the network..."
+        print "Building the network..."
         estimator = Estimator(
             data,
             args.hidden_sizes,
@@ -369,7 +369,7 @@ def main(args):
         )
 
         with tf.Session() as sess:
-            print "\nTraining the network..."
+            print "Training the network..."
             estimator.train(
                 sess,
                 SHORT_TERM_MODE,

@@ -106,7 +106,8 @@ class Estimator(object):
         # Prediction tensor: logit's first axis for LONG_TERM, logit's argmax for SHORT_TERM
         self.predictions = tf.cond(tf.equal(self.mode, self.LONG_TERM),
                                    true_fn  = lambda: logits[:, 0],
-                                   false_fn = lambda: tf.argmax(logits, axis=1),
+                                   # convert argmax to float32 to be compatible with LONG_TERM logit's type:
+                                   false_fn = lambda: tf.cast(tf.argmax(logits, axis=1), tf.float32),
                                    name='prediction_tensor')  # shape (bs,)
 
         # define loss tensor for SHORT TERM estimator:
@@ -129,15 +130,13 @@ class Estimator(object):
         optimizer = OPTIMIZERS[self.optimizer](learning_rate=self.lr)
         self.train_step = optimizer.minimize(self.loss, global_step=tf.train.get_global_step())
 
-        # Define accuracy for short term estimator:
+        # define accuracy for short term estimator:
         def _short_term_accuracy():
-            # define class label (0,1) and the class probabilities:
-            # predictions = {
-            #     "classes": tf.argmax(logits, axis=1, name="shortterm_pred_classes"),  # (bs,)
-            #     "probabilities": tf.nn.softmax(logits, name="shortterm_pred_probas")  # (bs, 2)
-            # }
+            # define class label (0,1) and class probabilities:
+            classes = tf.argmax(logits, axis=1, name="shortterm_pred_classes")   # (bs,)
+            probabilities = tf.nn.softmax(logits, name="shortterm_pred_probas")  # (bs, 2)
             # Accuracy tensor:
-            correct_predictions = tf.equal(self.predictions, self.y)
+            correct_predictions = tf.equal(classes, self.y)
             return tf.reduce_mean(tf.cast(correct_predictions, tf.float32))
         # Accuracy tensor:
         self.accuracy = tf.cond(tf.equal(self.mode, self.LONG_TERM),
@@ -151,7 +150,7 @@ class Estimator(object):
         # Add ops to save and restore all the variables.
         self.saver = tf.train.Saver()
 
-    def train(self, session, mode, patience, batch_size, dropout_rate, save=True, pretrained=None):
+    def train(self, session, mode, patience, batch_size, dropout_rate, save=True, pretrained=None, previous_accuracies=None):
         """
         :param session: tensorflow session
         :param mode: Estimator.SHORT_TERM or Estimator.LONG_TERM
@@ -160,12 +159,17 @@ class Estimator(object):
         :param dropout_rate: probability of drop out
         :param save: decide if we save the model & its parameters
         :param pretrained: list of (model_path, model_id, model_name) for the pretrained model, or None
+        :param previous_accuracies: list of (train_accuracies, valid_accuracies) from pretrained model, or None
         """
         self.batch_size = batch_size
         self.dropout_rate = dropout_rate
         self.pretrained = pretrained
-        self.train_accuracies = []
-        self.valid_accuracies = []
+        if previous_accuracies:
+            self.train_accuracies = previous_accuracies[0]
+            self.valid_accuracies = previous_accuracies[1]
+        else:
+            self.train_accuracies = []
+            self.valid_accuracies = []
 
         # Perform k-fold cross validation: train/valid on k different part of the data
         fold = 0
@@ -233,18 +237,16 @@ class Estimator(object):
                 self.save(session, save_model=False)
             # print "------------------------------"
 
-    def test(self, session, mode, x=None, y=None):
+    def test(self, mode, x=None, y=None):
         """
         evaluate model on test set
         :param mode: SHORT_TERM or LONG_TERM: different accuracy definition
         specify `x` and `y` if we want to evaluate on different set than self.test
         """
-        self.load(session)
-        print "Model restored."
         if x is None or y is None:
             x, y = self.x_test, self.y_test
         test_acc = self.evaluate(mode, x, y)
-        print "Test accuracy: %g" % test_acc
+        return test_acc
 
     def evaluate(self, mode, x, y):
         """
@@ -256,9 +258,15 @@ class Estimator(object):
         )
         return acc
 
-
-    # TODO: create predict function! return self.predictions to the user
-
+    def predict(self, mode, x):
+        """
+        :param mode: SHORT_TERM or LONG_TERM: different prediction definition
+        :return: prediction tensor to the user
+        """
+        pred = self.predictions.eval(
+            feed_dict={self.x: x, self.keep_prob: 1.0, self.mode: mode}
+        )
+        return pred
 
     def save(self, session, save_model=True, save_args=True, save_timings=True):
         prefix = "./%s/%s_%s" % (self.model_path, self.model_id, self.model_name)
