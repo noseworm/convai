@@ -508,10 +508,12 @@ def get_response(chat_id, text, context, allowed_model=None):
                             'model_name': 'emoji', 'policy': policy_mode}
 
             # if query falls under dumb questions, respond appropriately
-            elif dumb_qa_model.isMatch(text) and ModelID.DUMB_QA in model_responses:
+            elif dumb_qa_model.isMatch(text):
                 logging.info("Matching preset patterns")
-                response = model_responses[
-                    chat_unique_id][ModelID.DUMB_QA]
+                if ModelID.DUMB_QA in model_responses[chat_unique_id]:
+                    response = model_responses[
+                        chat_unique_id][ModelID.DUMB_QA]
+                    response['policyID'] = Policy.FIXED
             elif '?' in text:
                 # get list of common nouns between article and question
                 common = list(set(article_nouns[chat_id]).intersection(
@@ -522,6 +524,7 @@ def get_response(chat_id, text, context, allowed_model=None):
                 if len(common) > 0 and ModelID.DRQA in model_responses:
                     response = model_responses[
                         chat_unique_id][ModelID.DRQA]
+                    response['policyID'] = Policy.FIXED
 
     if not response:
         # if text contains 2 words or less, add 1 to the bored count
