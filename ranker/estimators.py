@@ -19,11 +19,11 @@ OPTIMIZERS = {
 }
 
 
+SHORT_TERM_MODE = 0
+LONG_TERM_MODE = 1
+
 
 class Estimator(object):
-    SHORT_TERM = tf.constant(0, dtype=tf.int8, name="SHORT_TERM_MODE")
-    LONG_TERM  = tf.constant(1, dtype=tf.int8, name="LONG_TERM_MODE")
-
     def __init__(self, data, hidden_dims, hidden_dims_extra, activation, optimizer, learning_rate, model_path='models', model_id=None, model_name='Estimator'):
         """
         Build the estimator for either short term or long term reward based on mode
@@ -48,11 +48,12 @@ class Estimator(object):
         self.lr = learning_rate
 
         self.model_path = model_path
-        if model_id:
-            self.model_id = model_id
-        else:
-            self.model_id = str(time.time())
+        if model_id: self.model_id = model_id
+        else: self.model_id = str(time.time())
         self.model_name = model_name
+
+        self.SHORT_TERM = tf.constant(SHORT_TERM_MODE, dtype=tf.int8, name="SHORT_TERM_MODE")
+        self.LONG_TERM  = tf.constant(LONG_TERM_MODE, dtype=tf.int8, name="LONG_TERM_MODE")
 
         self.build()
 
@@ -61,9 +62,9 @@ class Estimator(object):
         Build the actual neural net, define the predictions, loss, train operator, and accuracy
         """
         self.x = tf.placeholder(tf.float32, shape=[None, self.input_dim], name="input_layer")  # (bs, feat_size)
-        self.y = tf.placeholder(tf.int64, shape=[None, 1], name="labels")  # (bs,1)
+        self.y = tf.placeholder(tf.int64, shape=[None, ], name="labels")  # (bs,1)
 
-        # sccalar to decide in which mode we are: SHORT_TERM or LONG_TERM
+        # scalar to decide in which mode we are: SHORT_TERM or LONG_TERM
         self.mode = tf.placeholder(tf.int8, name="estimator_type")
 
         # Fully connected dense layers
@@ -88,7 +89,7 @@ class Estimator(object):
                                              name='extra_dense_layer_%d' % (idx + 1))  # (bs, hidd)
             return h_fc_extra
         # add extra layers to current network if LONG TERM estimator
-        h_fc = tf.cond(tf.equal(self.mode, Estimator.LONG_TERM),
+        h_fc = tf.cond(tf.equal(self.mode, self.LONG_TERM),
                        true_fn  = _extra_layers,
                        false_fn = lambda: h_fc)
 
@@ -97,22 +98,31 @@ class Estimator(object):
         h_fc_drop = tf.nn.dropout(h_fc, self.keep_prob, name='dropout_layer')
 
         # Output layer: linear activation to 1 scalar if LONG TERM estimator, to 2 digits if SHORT TERM
-        logits = tf.cond(tf.equal(self.mode, Estimator.LONG_TERM),
+        logits = tf.cond(tf.equal(self.mode, self.LONG_TERM),
                          true_fn  = lambda: tf.layers.dense(inputs=h_fc_drop, units=1),
                          false_fn = lambda: tf.layers.dense(inputs=h_fc_drop, units=2),
                          name='logits_layer')  # (bs, 1) or (bs, 2)
 
+        # Prediction tensor: logit's first axis for LONG_TERM, logit's argmax for SHORT_TERM
+        self.predictions = tf.cond(tf.equal(self.mode, self.LONG_TERM),
+                                   true_fn  = lambda: logits[:, 0],
+                                   false_fn = lambda: tf.argmax(logits, axis=1),
+                                   name='prediction_tensor')  # shape (bs,)
+
         # define loss tensor for SHORT TERM estimator:
         def _short_term_loss():
             # create one-hot labels
-            onehot_labels = tf.one_hot(indices=tf.cast(self.y, tf.int32), depth=2)  # (bs, 2)
+            onehot_labels = tf.one_hot(indices=tf.cast(self.y, tf.int32), depth=2)  # from shape (bs,) to (bs, 2)
             # define the cross-entropy loss
             return tf.losses.softmax_cross_entropy(onehot_labels=onehot_labels, logits=logits)
+        # define loss tensor for LONG TERM estimator:
+        def _long_term_loss():
+            labels = tf.expand_dims(self.y, axis=1)  # from shape (bs,) to (bs, 1)
+            return tf.losses.mean_squared_error(labels, logits)
         # Loss tensor: mean squared error for LONG TERM, softmax cross entropy for SHORT_TERM
-        self.loss = tf.cond(tf.equal(self.mode, Estimator.LONG_TERM),
-                            true_fn  = lambda: tf.losses.mean_squared_error(self.y, logits),
-                            false_fn = lambda: tf.losses.softmax_cross_entropy(tf.one_hot(tf.cast(self.y, tf.int32), depth=2), logits),
-                            # false_fn = lambda: _short_term_loss,
+        self.loss = tf.cond(tf.equal(self.mode, self.LONG_TERM),
+                            true_fn  = _long_term_loss,
+                            false_fn = _short_term_loss,
                             name = "loss_tensor")
 
         # Train operator:
@@ -122,19 +132,17 @@ class Estimator(object):
         # Define accuracy for short term estimator:
         def _short_term_accuracy():
             # define class label (0,1) and the class probabilities:
-            predictions = {
-                "classes": tf.argmax(logits, axis=1, name="shortterm_pred_classes"),  # (bs,)
-                "probabilities": tf.nn.softmax(logits, name="shortterm_pred_probas")  # (bs, 2)
-            }
+            # predictions = {
+            #     "classes": tf.argmax(logits, axis=1, name="shortterm_pred_classes"),  # (bs,)
+            #     "probabilities": tf.nn.softmax(logits, name="shortterm_pred_probas")  # (bs, 2)
+            # }
             # Accuracy tensor:
-            correct_predictions = tf.equal(
-                predictions['classes'], self.y
-            )
+            correct_predictions = tf.equal(self.predictions, self.y)
             return tf.reduce_mean(tf.cast(correct_predictions, tf.float32))
         # Accuracy tensor:
-        self.accuracy = tf.cond(tf.equal(self.mode, Estimator.LONG_TERM),
+        self.accuracy = tf.cond(tf.equal(self.mode, self.LONG_TERM),
                                 true_fn  = lambda: 1 - self.loss,
-                                false_fn = lambda: _short_term_accuracy,
+                                false_fn = _short_term_accuracy,
                                 name = "accuracy_tensor")
 
         # Once graph is built, create a saver for the model:
@@ -170,9 +178,9 @@ class Estimator(object):
             best_valid_acc = 0.0
             p = patience
 
+            print "begin fold %d" % fold,
             # reset model to its pretrained state
             if pretrained and len(pretrained) == 3:
-                print "reset model to %s/%s_%s" % pretrained
                 self.load(session, pretrained[0], pretrained[1], pretrained[2])
             # initialize model variables
             else:
@@ -248,6 +256,10 @@ class Estimator(object):
         )
         return acc
 
+
+    # TODO: create predict function! return self.predictions to the user
+
+
     def save(self, session, save_model=True, save_args=True, save_timings=True):
         prefix = "./%s/%s_%s" % (self.model_path, self.model_id, self.model_name)
         # save the tensorflow graph variables
@@ -291,6 +303,6 @@ class Estimator(object):
             model_id   = self.model_id
             model_name = self.model_name
         self.saver.restore(session, "./%s/%s_%s_model.ckpt" % (model_path, model_id, model_name))
-        print "Model restored."
+        print "Model restored to %s/%s_%s." % (model_path, model_id, model_name)
 
 

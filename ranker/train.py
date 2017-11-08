@@ -9,7 +9,7 @@ import time
 import sys
 import os
 
-from estimators import Estimator, ACTIVATIONS, OPTIMIZERS
+from estimators import Estimator, ACTIVATIONS, OPTIMIZERS, SHORT_TERM_MODE, LONG_TERM_MODE
 
 import features as _features
 import inspect
@@ -260,7 +260,7 @@ def main(args):
         best_args = []  # store the best combination
         best_valid_acc = 0.0  # store the best validation accuracy
         best_model = None  # store the best model id
-        valid_threshold = 0.63  # accuracy must be higher than 63% to be saved
+        valid_threshold = args.threshold  # accuracy must be higher for model to be saved
         print "Will try %d different configurations..." % args.explore
         for idx in range(args.explore):
             with tf.Session() as sess:
@@ -291,7 +291,7 @@ def main(args):
                     print "[%d] Training the network..." % (idx+1,)
                     estimator.train(
                         sess,
-                        Estimator.SHORT_TERM,
+                        SHORT_TERM_MODE,
                         args.patience,
                         bss[idx],
                         drs[idx],
@@ -372,7 +372,7 @@ def main(args):
             print "\nTraining the network..."
             estimator.train(
                 sess,
-                Estimator.SHORT_TERM,
+                SHORT_TERM_MODE,
                 args.patience,
                 args.batch_size,
                 args.dropout_rate,
@@ -395,6 +395,7 @@ if __name__ == '__main__':
     parser.add_argument("data", nargs='+', type=str, help="List of files to consider for training")
     parser.add_argument("-g",  "--gpu", type=int, default=0, help="GPU number to use")
     parser.add_argument("-ex", "--explore", type=int, default=None, help="Number of times to sample parameters. If None, will use the one provided")
+    parser.add_argument("-t",  "--threshold", type=float, default=0.63, help="minimum accuracy to reach in order to save the model (only used in exploration mode)")
     # training parameters:
     parser.add_argument("-bs", "--batch_size", type=int, default=128, help="batch size during training")
     parser.add_argument("-p",  "--patience", type=int, default=20, help="Number of training steps to wait before stoping when validatiaon accuracy doesn't increase")
