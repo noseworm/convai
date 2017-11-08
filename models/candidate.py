@@ -6,9 +6,12 @@ import logging
 import codecs
 import spacy
 nlp = spacy.load('en')
-logger = logging.getLogger(__name__)
+#logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(name)s.%(funcName)s +%(lineno)s: %(levelname)-8s [%(process)d] %(message)s',
+)
 
-# article should be a spacy converted article
 # dataset file should have each candidate sentence in one line
 class CandidateQuestions(object):
     def __init__(self,article,dataset_file,top_n=3):
@@ -53,6 +56,7 @@ class CandidateQuestions(object):
         for ent in ents:
             self.entities.append(ent)
             self.entities_str.append(ent.text)
+        logging.info(ents)
     
     # get the spacy token given string
     def _get_entity(self,token_str):
@@ -70,7 +74,7 @@ class CandidateQuestions(object):
             return response
         # select randomly among top_n entities as per distribution
         token = self._get_entity(random.choice(self.token_distribution[:self.top_n])[0])
-        logger.info(token)
+        logging.info(token)
         # get the ent_type_ and sample a line to use
         if token.label_.lower() in self.entity2line:
             line = self.dataset[random.choice(self.entity2line[token.label_.lower()])]
@@ -80,7 +84,7 @@ class CandidateQuestions(object):
             response = ''
         else:
             self.done_responses.append(response)
-        logger.info('Response: %s' % response)
+        logging.info('Response: %s' % response)
         return response
 
 

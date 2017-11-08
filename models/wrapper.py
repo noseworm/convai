@@ -20,9 +20,14 @@ import random
 import requests
 from nltk import sent_tokenize
 
-logger = logging.getLogger(__name__)
+#logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(name)s.%(funcName)s +%(lineno)s: %(levelname)-8s [%(process)d] %(message)s',
+)
 
 NQG_ENDURL = 'http://localhost:8080'
+DRQA_ENDURL = 'http://0.0.0.0:8888'
 
 
 class Model_Wrapper(object):
@@ -86,21 +91,21 @@ class HRED_Wrapper(Model_Wrapper):
         with open(state_path, 'r') as handle:
             state.update(cPickle.load(handle))
         state['dictionary'] = dict_file
-        logger.info('Building %s model...' % name)
+        logging.info('Building %s model...' % name)
         self.model = DialogEncoderDecoder(state)
-        logger.info('Building sampler...')
+        logging.info('Building sampler...')
         self.sampler = search.BeamSampler(self.model)
-        logger.info('Loading model...')
+        logging.info('Loading model...')
         self.model.load(model_path)
-        logger.info('Model built (%s).' % name)
+        logging.info('Model built (%s).' % name)
 
     # must contain this method for the bot
     def get_response(self, user_id='', text='', context=None, article='', **kwargs):
-        logger.info('--------------------------------')
-        logger.info('Generating HRED response for user %s.' % user_id)
+        logging.info('--------------------------------')
+        logging.info('Generating HRED response for user %s.' % user_id)
         text = self._format_to_model(text, len(context))
         context.append(text)
-        logger.info('Using context: %s' % ' '.join(list(context)))
+        logging.info('Using context: %s' % ' '.join(list(context)))
 
         samples, costs = self.sampler.sample(
             [' '.join(list(context))],
@@ -113,7 +118,7 @@ class HRED_Wrapper(Model_Wrapper):
         response = self._format_to_user(response)
         # add appropriate tags to the response in the context
         context.append(self._format_to_model(response, len(context)))
-        logger.info('Response: %s' % response)
+        logging.info('Response: %s' % response)
         return response, context
 
 
@@ -126,13 +131,13 @@ class Dual_Encoder_Wrapper(Model_Wrapper):
             with open('%s_model.pkl' % model_prefix, 'rb') as handle:
                 self.model = cPickle.load(handle)
         except Exception as e:
-            logger.error("%s\n ERROR: couldn't load the model" % e)
-            logger.info("Will create a new one with pretrained parameters")
+            logging.error("%s\n ERROR: couldn't load the model" % e)
+            logging.info("Will create a new one with pretrained parameters")
             # Loading old arguments
             with open('%s_args.pkl' % model_prefix, 'rb') as handle:
                 old_args = cPickle.load(handle)
 
-            logger.info("Loading data...")
+            logging.info("Loading data...")
             with open('%s' % data_fname, 'rb') as handle:
                 train_data, val_data, test_data = cPickle.load(handle)
             data = {'train': train_data, 'val': val_data, 'test': test_data}
@@ -142,13 +147,13 @@ class Dual_Encoder_Wrapper(Model_Wrapper):
             W = np.zeros(shape=(len(word2idx), old_args.emb_size))
             for idx in idx2word:
                 W[idx] = np.random.uniform(-0.25, 0.25, old_args.emb_size)
-            logger.info("W.shape: %s" % (W.shape,))
+            logging.info("W.shape: %s" % (W.shape,))
 
-            logger.info("Creating model...")
+            logging.info("Creating model...")
             self.model = self._create_model(
                 data, W, word2idx, idx2word, old_args)
 
-            logger.info("Set the learned weights...")
+            logging.info("Set the learned weights...")
             with open('%s_best_weights.pkl' % model_prefix, 'rb') as handle:
                 params = cPickle.load(handle)
                 lasagne.layers.set_all_param_values(self.model.l_out, params)
@@ -163,7 +168,7 @@ class Dual_Encoder_Wrapper(Model_Wrapper):
             timings = cPickle.load(handle)
             # load last timings (when no improvement was done)
             self.model.timings = timings
-        logger.info("Model loaded.")
+        logging.info("Model loaded.")
 
         with open("%s_r-encs.pkl" % model_prefix, 'rb') as handle:
             self.cached_retrieved_data = cPickle.load(handle)
@@ -205,11 +210,11 @@ class Dual_Encoder_Wrapper(Model_Wrapper):
         )
 
     def get_response(self, user_id='', text='', context=None, article='', **kwargs):
-        logger.info('--------------------------------')
-        logger.info('Generating DE response for user %s.' % user_id)
+        logging.info('--------------------------------')
+        logging.info('Generating DE response for user %s.' % user_id)
         text = self._format_to_model(text, len(context))
         context.append(text)
-        logger.info('Using context: %s' % ' '.join(list(context)))
+        logging.info('Using context: %s' % ' '.join(list(context)))
 
         # TODO: use tf-idf as a pre-filtering step to only retrive from `self.n_resp`
         # for now, sample `self.n_resp` randomly without replacement
@@ -234,7 +239,7 @@ class Dual_Encoder_Wrapper(Model_Wrapper):
         response = self._format_to_user(response)
         # add appropriate tags to the response in the context
         context.append(self._format_to_model(response, len(context)))
-        logger.info('Response: %s' % response)
+        logging.info('Response: %s' % response)
         return response, context
 
 
@@ -261,11 +266,11 @@ class HREDQA_Wrapper(Model_Wrapper):
         return ' '.join(text.strip().split())
 
     def get_response(self, user_id='', text='', context=None, article='', **kwargs):
-        logger.info('------------------------------------')
-        logger.info('Generating Followup question for user %s.' % user_id)
+        logging.info('------------------------------------')
+        logging.info('Generating Followup question for user %s.' % user_id)
         text = self._format_to_model(text, len(context))
         context.append(text)
-        logger.info('Using context: %s' % ' '.join(list(context)))
+        logging.info('Using context: %s' % ' '.join(list(context)))
 
         response = self.model.evaluate(
             self.model.encoder_model,
@@ -290,6 +295,7 @@ class CandidateQuestions_Wrapper(Model_Wrapper):
         self.models = {}
 
     def preprocess(self, chat_id='', article_text='', **kwargs):
+        logging.info("Preprocessing CandidateQuestions")
         assert isinstance(article_text, basestring)
         self.models[chat_id] = CandidateQuestions(
             article_text, self.dict_fname)
@@ -306,10 +312,10 @@ class CandidateQuestions_Wrapper(Model_Wrapper):
         return ' '.join(text.strip().split())
 
     def get_response(self, chat_id='', text='', context=None, article='', **kwargs):
-        logger.info('------------------------------------')
-        logger.info('Generating candidate question for chat %s.' % chat_id)
+        logging.info('------------------------------------')
+        logging.info('Generating candidate question for chat %s.' % chat_id)
         text = self._format_to_model(text, len(context))
-        logger.info(text)
+        logging.info(text)
         context.append(text)
 
         if chat_id in self.models:
@@ -343,12 +349,15 @@ class DumbQuestions_Wrapper(Model_Wrapper):
         return False
 
     def get_response(self, user_id='', text='', context=None, **kwargs):
-        logger.info('------------------------------------')
-        logger.info('Generating dumb question for user %s.' % user_id)
+        logging.info('------------------------------------')
+        logging.info('Generating dumb question for user %s.' % user_id)
         ctext = self._format_to_model(text, len(context))
         context.append(ctext)
-        key = self.getMatch(text)
-        response = random.choice(self.data[key])
+        if self.isMatch(text):
+            key = self.getMatch(text)
+            response = random.choice(self.data[key])
+        else:
+            response = ''
         context.append(self._format_to_model(response, len(context)))
         return response, context
 
@@ -356,6 +365,7 @@ class DumbQuestions_Wrapper(Model_Wrapper):
 class DRQA_Wrapper(Model_Wrapper):
     def __init__(self, model_prefix, dict_fname, name):
         super(DRQA_Wrapper, self).__init__(model_prefix, name)
+        self.articles = {}
 
     # check if user text is match to one of the keys
     def isMatch(self, text):
@@ -364,6 +374,11 @@ class DRQA_Wrapper(Model_Wrapper):
                 return True
         return False
 
+    def preprocess(self, chat_id='', article_text='', **kwargs):
+        logging.info("Saving the article for this chat state")
+        logging.info("Saving : {}".format(article_text))
+        self.articles[chat_id] = article_text
+    
     # return the key which matches
     def getMatch(self, text):
         for key, value in self.data.iteritems():
@@ -371,20 +386,27 @@ class DRQA_Wrapper(Model_Wrapper):
                 return key
         return False
 
-    def get_response(self, user_id='', text='', context='', article=None, **kwargs):
-        logger.info('------------------------------------')
-        logger.info('Generating DRQA answer for user %s.' % user_id)
+    
+    def get_response(self, user_id='', text='', context='', article='', **kwargs):
+        logging.info('------------------------------------')
+        logging.info('Generating DRQA answer for user %s.' % user_id)
         ctext = self._format_to_model(text, len(context))
         context.append(ctext)
         response = ''
+        if not isinstance(article,basestring):
+            article = str(article)
+        if len(article) == 0:
+            logging.info("DRQA taking saved article")
+            article = self.articles[user_id]
+        logging.info("DRQA : article {}".format(article))
         try:
-            res = requests.post('http://localhost:8888/ask',
-                                json={'article': article.text, 'question': text})
+            res = requests.post(DRQA_ENDURL+'/ask',
+                                json={'article': article, 'question': text})
             res_data = res.json()
             response = res_data['reply']['text']
         except Exception as e:
             print e
-            logger.error(e)
+            logging.error(e)
         context.append(self._format_to_model(response, len(context)))
         return response, context
 
@@ -396,7 +418,7 @@ class NQG_Wrapper(Model_Wrapper):
 
     def preprocess(self, chat_id='', article_text='', **kwargs):
         # extract all sentences from the article
-        logger.info('Preprocessing the questions for this article')
+        logging.info('Preprocessing the questions for this article')
         # check condition if we use Spacy
         assert isinstance(article_text, basestring)
         sentences = sent_tokenize(article_text)
@@ -406,15 +428,15 @@ class NQG_Wrapper(Model_Wrapper):
             self.questions[chat_id] = res_data
             for item in self.questions[chat_id]:
                 item.update({"used": 0})
-            logger.info('Preprocessed article')
+            logging.info('Preprocessed article')
             self.questions[chat_id].sort(key=lambda x:  x["score"])
         except Exception as e:
-            logger.info('Error in NQG article fetching')
-            logger.error(e)
+            logging.info('Error in NQG article fetching')
+            logging.error(e)
 
     def get_response(self, user_id='', text='', context=None, article=None, **kwargs):
-        logger.info('----------------------------------------')
-        logger.info('Generating NQG question for user %s.' % user_id)
+        logging.info('----------------------------------------')
+        logging.info('Generating NQG question for user %s.' % user_id)
         response = ''
         if len(self.questions) > 0:
             response = self.questions[user_id][0]['pred']
@@ -433,11 +455,11 @@ class Echo_Wrapper(Model_Wrapper):
         super(Echo_Wrapper, self).__init__(model_prefix, name)
 
     def get_response(self, user_id='', text='', context=None, article=None, **kwargs):
-        logger.info('------------------------------------')
-        logger.info('Generating Echo response for user %s.' % user_id)
+        logging.info('------------------------------------')
+        logging.info('Generating Echo response for user %s.' % user_id)
         text = self._format_to_model(text, len(context))
         context.append(text)
-        logger.info('Using context: %s' % ' '.join(list(context)))
+        logging.info('Using context: %s' % ' '.join(list(context)))
 
         response = text
         response = self._format_to_user(response)

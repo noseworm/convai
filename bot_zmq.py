@@ -13,6 +13,7 @@ conf = config.get_config()
 import random
 import emoji
 import storage
+from model_selection_zmq import ModelID
 from Queue import Queue
 from threading import Thread
 import logging
@@ -58,6 +59,7 @@ class ChatState:
     START = 0     # when we received `/start`
     END = 1       # when we received `/end`
     CHATTING = 2  # all other times
+    CONTROL = 3   # for control msgs
 
 
 class ConvAIRLLBot:
@@ -77,6 +79,7 @@ class ConvAIRLLBot:
                 self.ai[chat_id]['chat_id'] = chat_id
                 self.ai[chat_id]['observation'] = m['message']['text']
                 self.ai[chat_id]['context'] = [] # changed from deque since it is not JSON serializable
+                self.ai[chat_id]['allowed_model'] = ModelID.ALL
                 logging.info("Start new chat #%s" % self.chat_id)
                 state = ChatState.START  # we started a new dialogue
                 chat_history[chat_id] = []
@@ -91,6 +94,20 @@ class ConvAIRLLBot:
                 processing_msg_queue.put({'control': 'clean', 'chat_id': chat_id})
                 del self.ai[chat_id]
                 state = ChatState.END  # we finished a dialogue
+            # TODO: Control statement for allowed models
+            # Statement could start with \model start <model_name>
+            # End with \model end <model_name>
+            elif m['message']['text'].startswith("\\model"):
+                controls = m['message']['text'].split()
+                if controls[1] == 'start':
+                    # always provide a valid model name for debugging.
+                    self.ai[chat_id]['allowed_model'] = controls[2]
+                    logging.info("Control msg accepted, selecting model {}"
+                            .format(controls[2]))
+                else:
+                    self.ai[chat_id]['allowed_model'] = ModelID.ALL
+                    logging.info("Control msg accepted, resetting model selection")
+                state = ChatState.CONTROL
             # Continue chat
             else:
                 self.ai[chat_id]['observation'] = m['message']['text']
@@ -128,8 +145,11 @@ class ConvAIRLLBot:
 
         model_name = 'none'
         policyID = -1
-        if state == ChatState.START:
-            text = "Hello! I hope you're doing well. I am doing fantastic today! Let me go through the article real quick and we will start talking about it."
+        if state != ChatState.CHATTING:
+            if state == ChatState.CONTROL:
+                text = "--- Control command received ---"
+            if state == ChatState.START:
+                text = "Hello! I hope you're doing well. I am doing fantastic today! Let me go through the article real quick and we will start talking about it."
             # push this response to `outgoing_msg_queue`
             outgoing_msg_queue.put(
                 {'text': text, 'chat_id': chat_id,
@@ -140,7 +160,7 @@ class ConvAIRLLBot:
                 'chat_id': chat_id,
                 'text': self.ai[chat_id]['observation'],
                 'context': self.ai[chat_id]['context'],
-                'allowed_model': 'all'
+                'allowed_model': self.ai[chat_id]['allowed_model']
             })
 
 
