@@ -9,23 +9,13 @@ import time
 import sys
 import os
 
-import features
+import features as _features
+import inspect
 
-
-ALL_FEATURES = [
-    'AverageWordEmbedding_Candidate', 'AverageWordEmbedding_User', 'AverageWordEmbedding_LastK',
-    'AverageWordEmbedding_kUser', 'AverageWordEmbedding_Article',
-    'Similarity_CandidateUser',
-    'Similarity_CandidateLastK', 'Similarity_CandidateLastK_noStop',
-    'Similarity_CandidateKUser', 'Similarity_CandidateKUser_noStop',
-    'Similarity_CandidateArticle', 'Similarity_CandidateArticle_noStop',
-    'NonStopWordOverlap', 'BigramOverlap', 'TrigramOverlap', 'EntityOverlap',
-    'GenericTurns',
-    'WhWords', 'IntensifierWords', 'ConfusionWords', 'ProfanityWords', 'Negation',
-    'DialogLength', 'LastUserLength', 'CandidateLength', 'ArticleLength',
-    'DialogActCandidate', 'DialogActLastUser',
-    'SentimentScoreCandidate', 'SentimentScoreLastUser'
-]
+ALL_FEATURES = []
+for name, obj in inspect.getmembers(_features):
+    if inspect.isclass(obj) and name not in ['SentimentIntensityAnalyzer', 'Feature']:
+        ALL_FEATURES.append(name)
 
 TARGET_TO_FEATURES = {
     'r': [
@@ -71,8 +61,7 @@ OPTIMIZERS = {
 }
 
 
-def get_data(files, target, feature_list=None, voted_only=False, val_prop=0.1, test_prop=0.1, save=True):
-    # TODO: rewrite to support precomputed feature json files!!
+def get_data(files, target, feature_list=None, voted_only=False, val_prop=0.1, test_prop=0.1):
     """
     Load data to train ranker. Build `k` fold cross validation train/val data
     :param files: list of data files to load
@@ -84,7 +73,6 @@ def get_data(files, target, feature_list=None, voted_only=False, val_prop=0.1, t
     :param val_prop: proportion of data to consider for validation set.
         Will also define the number of train/valid folds
     :param test_prop: proportion of data to consider for test set
-    :param save: save if new data created
     :return: collections of train x & y, valid x & y, and one test x & y
         x = numpy array of size (data, feature_length)
           ie: np.array( [[f1, f2, ..., fn], ..., [f1, f2, ..., fn]] )
@@ -93,135 +81,137 @@ def get_data(files, target, feature_list=None, voted_only=False, val_prop=0.1, t
     assert target in ['R', 'r'], "Unknown target: %s" % target
 
     print "\nLoading data..."
-    data = []
-    file_ids = []
+    raw_data = {}  # map file name to list of dictionaries
+    ''' FORMAT:
+    {
+       file_name : [ {-}, {-}, ..., {-} ],
+       ...
+    }
+    with {-} being the dictionary object containing context, article, etc...
+    '''
+    n = 0  # total number of examples
     for data_file in files:
         if voted_only and 'data/voted_data_' in data_file:
             with open(data_file, 'rb') as handle:
-                data.extend(json.load(handle))
+                raw_data[data_file] = json.load(handle)
+                n += len(raw_data[data_file])
                 # get the time id of the data
-                file_ids.append(data_file.split('_')[-1].replace('pkl', ''))
+                # file_ids.append(data_file.split('_')[-1].replace('pkl', ''))
         elif (not voted_only) and 'data/full_data_' in data_file:
             with open(data_file, 'rb') as handle:
-                data.extend(json.load(handle))
+                raw_data[data_file] = json.load(handle)
+                n += len(raw_data[data_file])
                 # get the time id of the data
-                file_ids.append(data_file.split('_')[-1].replace('pkl', ''))
+                # file_ids.append(data_file.split('_')[-1].replace('pkl', ''))
         else:
             print "Warning: will not consider file %s because voted_only=%s" % (data_file, voted_only)
+    print "got %d examples" % n
 
-    # if didn't get train/valid/test data, build your own
-    if len(data) > 4:
-        print "got %d examples" % len(data)
-
-        # Build map from article to data_idx to avoid having overlap between train/valid/test sets
-        article2id = {}
+    # Build map from article to filename to data_idx to avoid having overlap between train/valid/test sets
+    article2file2id = {}
+    ''' FORMAT: {
+        article : { file_name: [idx, idx, ..., idx],
+                    ...
+                  },
+        ...
+    } '''
+    for data_file, data in raw_data.iteritems():
         for idx, msg in enumerate(data):
-            article = unicode(msg['article'])
-            if article in article2id:
-                article2id[article].append(idx)
+            article = msg['article']
+            if article not in article2file2id:
+                article2file2id[article] = {}
+
+            if data_file not in article2file2id[article]:
+                article2file2id[article][data_file] = [idx]
             else:
-                article2id[article] = [idx]
-        print "got %d unique articles" % len(article2id)
+                article2file2id[article][data_file].append(idx)
+    print "got %d unique articles" % len(article2file2id)
 
-        n_train = int(len(data) * (1-val_prop-test_prop))  # size of training data
-        n_valid = int(len(data) * val_prop)  # size of valid data
-        n_test  = int(len(data) * test_prop) # size of test data
-        test_data, remain_data = [], []
-        for article, indices in article2id.iteritems():
-            # add to test set
-            if len(test_data) < n_test:
-                test_data.extend([data[idx] for idx in indices])
-            # keep the remaining for train & valid k-fold
-            else:
-                remain_data.extend([data[idx] for idx in indices])
+    train_max_n = int(n * (1-val_prop-test_prop))  # size of training data
+    valid_max_n = int(n * val_prop)  # size of valid data
+    test_max_n  = int(n * test_prop) # size of test data
 
-        # create list of Feature instances
-        if feature_list is None:
-            feature_list = TARGET_TO_FEATURES[target]
-        feature_objects = features.get(article=None, context=None, candidate=None, feature_list=feature_list)
-        input_size = np.sum([f.dim for f in feature_objects])
+    test_data, remain_data = {}, {}  # store map from filename to list of indices
+    test_n, remain_n = 0, 0          # number of examples
+    for article, file2id in article2file2id.iteritems():
+        # add to test set
+        if test_n < test_max_n:
+            for data_file, indices in file2id.iteritems():
+                if data_file not in test_data:
+                    test_data[data_file] = []
+                test_data[data_file].extend(indices)
+                test_n += len(indices)
+        # keep the remaining for train & valid k-fold
+        else:
+            for data_file, indices in file2id.iteritems():
+                if data_file not in remain_data:
+                    remain_data[data_file] = []
+                remain_data[data_file].extend(indices)
+                remain_n += len(indices)
 
-        # construct data to save & return
-        remain_x = np.zeros((len(remain_data), input_size))
-        remain_y = []
-        test_x = np.zeros((len(test_data), input_size))
-        test_y = []
+    # create list of Feature instances
+    if feature_list is None:
+        feature_list = TARGET_TO_FEATURES[target]
+    feature_objects = _features.get(article=None, context=None, candidate=None, feature_list=feature_list)
+    input_size = np.sum([f.dim for f in feature_objects])
+    del feature_objects  # now that we have the input_size, don't need those anymore
 
-        print "building data..."
-        bar = pyprind.ProgBar(len(data), monitor=False, stream=sys.stdout)  # show a progression bar on the screen
-        for (x, y, data) in [(remain_x, remain_y, remain_data), (test_x, test_y, test_data)]:
-            for idx, msg in enumerate(data):
+    # construct data to save & return
+    remain_x = []  # np.zeros((remain_n, input_size))
+    remain_y = []
+    test_x = []    # np.zeros((test_n, input_size))
+    test_y = []
+
+    print "building data..."
+    for x, y, data in [(remain_x, remain_y, remain_data), (test_x, test_y, test_data)]:
+        for data_file, indices in data.iteritems():
+            # load the required features for that file
+            features = {}
+            feature_path = data_file.replace('.json', '.features')
+            for feat in feature_list:
+                with open("%s/%s.json" % (feature_path, feat), 'rb') as handle:
+                    features[feat] = json.load(handle)
+            for idx in indices:
+                msg = raw_data[data_file][idx]
                 # create input features for this msg:
-                tmp = []
-                for f in feature_objects:
-                    # Set x for each feature for that msg
-                    f.set(msg['article'], msg['context'], msg['candidate'])
-                    tmp.extend(copy.deepcopy(f.feat))
-                x[idx, :] = np.array(tmp, dtype=np.float32)
+                tmp = np.concatenate( [features[feat][idx] for feat in feature_list] )
+                x.append(tmp.tolist())
                 # set y labels
                 if target == 'r':
-                    if int(msg[target]) == -1:  y.append(0)
+                    if int(msg[target]) == -1: y.append(0)
                     elif int(msg[target]) == 1: y.append(1)
                     else: print "ERROR: unknown immediate reward value: %s" % msg[target]
                 else:
                     y.append(msg[target])
-                bar.update()
-        remain_y = np.array(remain_y)
-        test_y = np.array(test_y)
 
-        # reformat train & valid to build k-folds:
-        trains = []
-        valids = []
-        n = len(remain_y)
-        for k_fold in range(n / n_valid):
-            start = n_valid*k_fold  # start index of validation set
-            stop = n_valid*(k_fold+1)  # stop index of validation set
-            # define validation set for this fold
-            tmp_valid_x = remain_x[start: stop]
-            tmp_valid_y = remain_y[start: stop]
-            valids.append((tmp_valid_x, tmp_valid_y))
-            print "[fold %d] valid: %s" % (k_fold+1, tmp_valid_x.shape)
-            # define training set for this fold
-            # print "[fold %d] train indices: %s" % (k+fold+1, np.array(range(stop, n+start)) % n)
-            tmp_train_x = remain_x[np.array(range(stop, n+start)) % n]
-            tmp_train_y = remain_y[np.array(range(stop, n+start)) % n]
-            trains.append((tmp_train_x, tmp_train_y))
-            print "[fold %d] train: %s" % (k_fold+1, tmp_train_x.shape)
-        print "test: %s" % (test_x.shape,)
+    remain_x = np.array(remain_x)
+    assert remain_x.shape == (remain_n, input_size), "%s != %s" % (remain_x.shape, (remain_n, input_size))
+    remain_y = np.array(remain_y)
+    assert len(remain_y) == remain_n, "%d != %d" % (len(remain_y), remain_n)
+    test_x = np.array(test_x)
+    assert test_x.shape == (test_n, input_size), "%s != %s" % (test_x.shape, (test_n, input_size))
+    test_y = np.array(test_y)
+    assert len(test_y) == test_n, "%d != %d" % (len(test_y), test_n)
 
-        if save:
-            # save train/val/test data to pkl file
-            file_name = ""
-            if voted_only:
-                file_name += "voted_data_"
-            else:
-                file_name += "full_data_"
-            file_name += "train-val-test_"
-            for file_id in file_ids:
-                file_name += file_id
-            print "saving in %spkl..." % file_name
-            with open(file_name+'pkl', 'wb') as handle:
-                json.dump(
-                    [trains, valids, (test_x, test_y), feature_list],
-                    handle,
-                    pkl.HIGHEST_PROTOCOL
-                )
-            print "done."
-
-    # got train/valid/test data
-    elif len(data) == 4:
-        trains, valids, (test_x, test_y), feature_list = data
-        # trains & valids is the k-fold cross validated data
-        for k_fold in range(len(trains)):
-            print "[fold %d] train: %s" % (k_fold+1, trains[k_fold][0].shape)
-            print "[fold %d] valid: %s" % (k_fold+1, valids[k_fold][0].shape)
-            # make sure train, valid, test have the same amount of features.
-            assert trains[k_fold][0].shape[1] == valids[k_fold][0].shape[1] == test_x.shape[1]
-        print "test: %s" % (test_x.shape,)
-
-    else:
-        print "Unknown data format: data length is less than 4."
-        return
+    # reformat train & valid to build k-folds:
+    trains = []
+    valids = []
+    n = len(remain_y)
+    for k_fold in range(n / valid_max_n):
+        start = valid_max_n * k_fold  # start index of validation set
+        stop =  valid_max_n * (k_fold+1)  # stop index of validation set
+        # define validation set for this fold
+        tmp_valid_x = remain_x[start: stop]
+        tmp_valid_y = remain_y[start: stop]
+        valids.append((tmp_valid_x, tmp_valid_y))
+        print "[fold %d] valid: %s" % (k_fold+1, tmp_valid_x.shape)
+        # define training set for this fold
+        # print "[fold %d] train indices: %s" % (k+fold+1, np.array(range(stop, n+start)) % n)
+        tmp_train_x = remain_x[np.array(range(stop, n+start)) % n]
+        tmp_train_y = remain_y[np.array(range(stop, n+start)) % n]
+        trains.append((tmp_train_x, tmp_train_y))
+        print "[fold %d] train: %s" % (k_fold+1, tmp_train_x.shape)
+    print "test: %s" % (test_x.shape,)
 
     return trains, valids, (test_x, test_y), feature_list
 
@@ -440,27 +430,29 @@ def sample_parameters(t):
     """
     randomly choose a set of parameters t times
     """
-    features = [
-        'AverageWordEmbedding_LastK', 'AverageWordEmbedding_kUser',
-        'Similarity_CandidateUser',
-        'Similarity_CandidateLastK', 'Similarity_CandidateLastK_noStop',
-        'Similarity_CandidateKUser', 'Similarity_CandidateKUser_noStop',
-        'Similarity_CandidateArticle', 'Similarity_CandidateArticle_noStop',
-        'NonStopWordOverlap', 'BigramOverlap', 'TrigramOverlap', 'EntityOverlap',
-        'GenericTurns',
-        'WhWords', 'IntensifierWords', 'ConfusionWords', 'ProfanityWords', 'Negation',
-        'DialogLength', 'LastUserLength', 'CandidateLength', 'ArticleLength',
-        'DialogActCandidate', 'DialogActLastUser',
-        'SentimentScoreCandidate', 'SentimentScoreLastUser'
-    ]
+    default_features = ['AverageWordEmbedding_Candidate', 'AverageWordEmbedding_User', 'AverageWordEmbedding_Article']
+    features = filter(lambda f : f not in default_features, ALL_FEATURES)
+    # [
+    #     'AverageWordEmbedding_LastK', 'AverageWordEmbedding_kUser',
+    #     'Similarity_CandidateUser',
+    #     'Similarity_CandidateLastK', 'Similarity_CandidateLastK_noStop',
+    #     'Similarity_CandidateKUser', 'Similarity_CandidateKUser_noStop',
+    #     'Similarity_CandidateArticle', 'Similarity_CandidateArticle_noStop',
+    #     'NonStopWordOverlap', 'BigramOverlap', 'TrigramOverlap', 'EntityOverlap',
+    #     'GenericTurns',
+    #     'WhWords', 'IntensifierWords', 'ConfusionWords', 'ProfanityWords', 'Negation',
+    #     'DialogLength', 'LastUserLength', 'CandidateLength', 'ArticleLength',
+    #     'DialogActCandidate', 'DialogActLastUser',
+    #     'SentimentScoreCandidate', 'SentimentScoreLastUser'
+    # ]
     # map from hidden sizes to used_before flag
     hidd_sizes = dict(
         [(k, False) for k in [
-            (700, 300), (700, 100), (500, 50), (500, 100), (300, 50),
-            (700, 500, 50), (700, 100, 50), (500, 700, 300),
-            (500, 400, 100), (500, 100, 50), (300, 500, 100),
-            (700, 300, 300, 100), (700, 300, 300, 500), (500, 200, 200, 50),
-            (800, 500, 300, 100, 50), (800, 300, 300, 300, 50)
+            (900, 300), (700, 300), (700, 100), (500, 50), (500, 100), (300, 50),
+            (900, 500, 200), (900, 300, 50), (700, 500, 50), (700, 100, 50),
+            (500, 700, 300), (500, 400, 100), (500, 100, 50), (300, 500, 100),
+            (900, 500, 500, 100), (900, 600, 300, 100), (700, 300, 300, 100), (700, 500, 300, 100), (500, 200, 200, 50),
+            (800, 500, 300, 100, 50), (900, 600, 300, 100, 50), (800, 300, 300, 300, 50)
         ]]
     )
     activations = ['swish', 'relu', 'sigmoid']
@@ -473,8 +465,8 @@ def sample_parameters(t):
     # sample parameters
     for _ in range(t):
         # force 3*300 features for input of size > 900
-        sampled_features = ['AverageWordEmbedding_Candidate', 'AverageWordEmbedding_User', 'AverageWordEmbedding_Article']
-        n = np.random.randint(3, len(features)+1)  # number of features to sample: between 3 and all
+        sampled_features = copy.deepcopy(default_features)
+        n = np.random.randint(len(features)/2, len(features)+1)  # number of features to sample: between half and all
         sampled_features.extend(np.random.choice(features, n, replace=False))
 
         new_sizes = [h for h in hidd_sizes.keys() if not hidd_sizes[h]]
@@ -505,7 +497,7 @@ def main(args):
         best_args = []  # store the best combination
         best_valid_acc = 0.0  # store the best validation accuracy
         best_model = None  # store the best model id
-        valid_threshold = 0.62  # accuracy must be higher than 62% to be saved
+        valid_threshold = 0.63  # accuracy must be higher than 62% to be saved
         print "Will try %d different configurations..." % args.explore
         for idx in range(args.explore):
             with tf.Session() as sess:
@@ -520,7 +512,7 @@ def main(args):
                     print "[%d] sampled batch size: %d" % (idx+1, bss[idx])
 
                     # Load datasets
-                    data = get_data(args.data, 'r', feature_list=feats[idx], voted_only=True, save=False)
+                    data = get_data(args.data, 'r', feature_list=feats[idx], voted_only=True)
                     trains = data[0]
                     print "[%d] Building the network..." % (idx+1,)
                     estimator1 = ShortTermEstimator(
@@ -565,13 +557,13 @@ def main(args):
                     print e
                     print "best model: %s" % best_model
                     print "with parameters:"
-                    print " - features:\n%s"     % best_args[0]
-                    print " - hidden_sizes: %s"  % best_args[1]
-                    print " - activation: %s"    % best_args[2]
-                    print " - optimizer: %s"     % best_args[3]
-                    print " - learning rate: %g" % best_args[4]
-                    print " - dropout rate: %g"  % best_args[5]
-                    print " - batch size: %d"    % best_args[6]
+                    print " - features:\n%s"     % (best_args[0],)
+                    print " - hidden_sizes: %s"  % (best_args[1],)
+                    print " - activation: %s"    % (best_args[2],)
+                    print " - optimizer: %s"     % (best_args[3],)
+                    print " - learning rate: %g" % (best_args[4],)
+                    print " - dropout rate: %g"  % (best_args[5],)
+                    print " - batch size: %d"    % (best_args[6],)
                     print "with average valid accuracy: %g" % best_valid_acc
                     sys.exit()
 
@@ -594,8 +586,8 @@ def main(args):
     else:
         # run one experiment with provided parameters
         # Load datasets
-        data = get_data(args.data, 'r', voted_only=True)
-        train, valid, test, feature_list = data
+        data = get_data(args.data, 'r', feature_list=ALL_FEATURES, voted_only=True)
+        trains = data[0]
 
         print "\nBuilding the network..."
         estimator1 = ShortTermEstimator(
@@ -611,10 +603,18 @@ def main(args):
                 sess,
                 args.patience,
                 args.batch_size,
-                args.dropout_rate_1
+                args.dropout_rate_1,
+                save=True
             )
+            max_train = [max(estimator1.train_accuracies[i]) for i in range(len(trains))]
+            max_valid = [max(estimator1.valid_accuracies[i]) for i in range(len(trains))]
+            print "max train accuracies: %s" % (max_train,)
+            print "max valid accuracies: %s" % (max_valid,)
+            train_acc = np.mean(max_train)
+            valid_acc = np.mean(max_valid)
+            print "best avg. train accuracy: %g" % train_acc
+            print "best avg. valid accuracy: %g" % valid_acc
         print "done."
-
 
 
 if __name__ == '__main__':

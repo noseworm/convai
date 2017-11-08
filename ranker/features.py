@@ -29,8 +29,7 @@ logger.info("")
 
 def get(article, context, candidate, feature_list):
     """
-    The only method to call to get all features we want for a triple
-    of (article, context, candidate response).
+    get all features we want for a triple of (article, context, candidate response).
     :param article: the text of the conversation article to talk to
     :param context: the list of user & bot utterances so far
     :param candidate: the candidate response one model proposed
