@@ -18,6 +18,8 @@ from candidate import CandidateQuestions
 import json
 import random
 import requests
+import delegator
+import codecs
 from nltk import sent_tokenize
 
 #logger = logging.getLogger(__name__)
@@ -28,6 +30,7 @@ logging.basicConfig(
 
 NQG_ENDURL = 'http://localhost:8080'
 DRQA_ENDURL = 'http://0.0.0.0:8888'
+FASTTEXT_DIR = '/root/convai/models/fastText/'
 
 
 class Model_Wrapper(object):
@@ -465,3 +468,64 @@ class Echo_Wrapper(Model_Wrapper):
         response = self._format_to_user(response)
         context.append(self._format_to_model(response, len(context)))
         return response, context
+
+class Topic_Wrapper(Model_Wrapper):
+    def __init__(self, model_prefix, dict_fname, name, dir_name, model_name, top_k=2):
+        super(Topic_Wrapper, self).__init__(model_prefix, name)
+        ## Read the classes once
+        self.dir_name = dir_name
+        self.model_name = model_name
+        self.topics = []
+        self.predicted = []
+        self.top_k = top_k
+        self.query_string = 'cd {} && ./fasttext predict {} /tmp/{}_article.txt {} > /tmp/{}_preds.txt'
+        with open(dir_name + 'classes.txt','r') as fp:
+            for line in fp:
+                self.topics.append(line.rstrip())
+
+
+    def preprocess(self, chat_id='', article_text='', **kwargs):
+        """Calculate the article topic in preprocess call
+        """
+        logging.info("Started preprocesssing topics")
+        ## Write article to tmp file
+        with codecs.open('/tmp/{}_article.txt'.format(chat_id),'w',encoding='utf-8') as fp:
+            fp.write(article_text.replace("\n",""))
+        ## Use subprocess to call fasttext
+        logging.info("Running fasttext ...")
+        call_string = self.query_string.format(FASTTEXT_DIR,
+            self.model_name,chat_id,
+            self.top_k, chat_id)
+        logging.info(call_string)
+        outp = delegator.run(call_string)
+        logging.info(outp.out)
+        logging.info(outp.err)
+        ## store the topics in memory
+        logging.info("Extracting predictions")
+        self.predicted = []
+        with open('/tmp/{}_preds.txt'.format(chat_id), 'r') as fp:
+            for line in fp:
+                p = line.split(' ')
+                p = [int(pt.replace('__label__','')) - 1 for pt in p]
+                self.predicted.append([self.topics[pt] for pt in p])
+        assert len(self.predicted) == 1
+        logging.info("Calculated topics for the article, which are {}".format(','.join(self.predicted[0])))
+
+    def get_response(self, user_id='', text='', context=None, article=None, **kwargs):
+        logging.info('---------------------------------')
+        logging.info('Generating topic for the article')
+        if len(self.predicted) > 0:
+            response = self.predicted[0][0] # give back the top topic
+        else:
+            response = ''
+        context.append(self._format_to_model(response, len(context)))
+        return response, context
+
+
+
+
+
+
+
+        
+
