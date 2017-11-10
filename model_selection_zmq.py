@@ -208,11 +208,13 @@ class ModelClient():
                 if 'chat_id' in msg:
                     msg['user_id'] = msg['chat_id']
                 response, context = self.model.get_response(**msg)
-                resp_msg = {'text': response, 'context': context,
-                            'model_name': self.model_name,
-                            'chat_id': msg['chat_id'],
-                            'chat_unique_id': msg['chat_unique_id']}
-                self.queue.put(resp_msg)
+                ## if blank response, do not push it in the channel
+                if len(response) > 0:
+                    resp_msg = {'text': response, 'context': context,
+                                'model_name': self.model_name,
+                                'chat_id': msg['chat_id'],
+                                'chat_unique_id': msg['chat_unique_id']}
+                    self.queue.put(resp_msg)
 
     def run(self):
         """Fire off the client"""
@@ -254,7 +256,8 @@ modelIds = [ModelID.ECHO, ModelID.CAND_QA, ModelID.HRED_TWITTER,
         ModelID.FOLLOWUP_QA, ModelID.DUMB_QA, ModelID.DRQA, ModelID.NQG, ModelID.TOPIC]
 # modelIds = [ModelID.TOPIC]
 
-# initialize only this model to catch the patterns
+# initialize only these models to catch the patterns
+# TODO: or probably a pattern catcher?
 dumb_qa_model = DumbQuestions_Wrapper(
     '', conf.dumb['dict_file'], ModelID.DUMB_QA)
 
@@ -513,12 +516,16 @@ def get_response(chat_id, text, context, allowed_model=None):
                             'model_name': 'emoji', 'policy': policy_mode}
 
             # if query falls under dumb questions, respond appropriately
-            elif dumb_qa_model.isMatch(text):
-                logging.info("Matching preset patterns")
-                if ModelID.DUMB_QA in model_responses[chat_unique_id]:
-                    response = model_responses[
-                        chat_unique_id][ModelID.DUMB_QA]
-                    response['policyID'] = Policy.FIXED
+            elif ModelID.DUMB_QA in model_responses[chat_unique_id]:
+                logging.info("Matched dumb preset patterns")
+                response = model_responses[
+                    chat_unique_id][ModelID.DUMB_QA]
+                response['policyID'] = Policy.FIXED
+            elif ModelID.TOPIC in model_responses[chat_unique_id]:
+                logging.info("Matched topic preset patterns")
+                response = model_responses[
+                    chat_unique_id][ModelID.TOPIC]
+                response['policyID'] = Policy.FIXED
             elif '?' in text:
                 # get list of common nouns between article and question
                 common = list(set(article_nouns[chat_id]).intersection(

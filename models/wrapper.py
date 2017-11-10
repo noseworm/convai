@@ -81,6 +81,13 @@ class Model_Wrapper(object):
         """
         pass  # OPTIONAL, may or may not implement this
 
+    def isMatch(self, text='', **kwargs):
+        """
+        For some models, it is better to check the intent using some pre-set
+        regexes. Use this to do that.
+        """
+        pass  # OPTIONAL
+
 
 class HRED_Wrapper(Model_Wrapper):
 
@@ -381,7 +388,7 @@ class DRQA_Wrapper(Model_Wrapper):
         logging.info("Saving the article for this chat state")
         logging.info("Saving : {}".format(article_text))
         self.articles[chat_id] = article_text
-    
+
     # return the key which matches
     def getMatch(self, text):
         for key, value in self.data.iteritems():
@@ -389,7 +396,6 @@ class DRQA_Wrapper(Model_Wrapper):
                 return key
         return False
 
-    
     def get_response(self, user_id='', text='', context='', article='', **kwargs):
         logging.info('------------------------------------')
         logging.info('Generating DRQA answer for user %s.' % user_id)
@@ -424,6 +430,8 @@ class NQG_Wrapper(Model_Wrapper):
         logging.info('Preprocessing the questions for this article')
         # check condition if we use Spacy
         assert isinstance(article_text, basestring)
+        # clean the text
+        article_text = re.sub(r'^https?:\/\/.*[\r\n]*', '', article_text, flags=re.MULTILINE)
         sentences = sent_tokenize(article_text)
         try:
             res = requests.post(NQG_ENDURL, json={'sents': sentences})
@@ -483,6 +491,10 @@ class Topic_Wrapper(Model_Wrapper):
             for line in fp:
                 self.topics.append(line.rstrip())
 
+    def isMatch(self, text=''):
+        question_match_regex ="what\\s*(is|'?s)\\s?(this)\\s?(article)?\\s?(about)(\\?)*"
+        return re.match(question_match_regex, text, re.IGNORECASE)
+
 
     def preprocess(self, chat_id='', article_text='', **kwargs):
         """Calculate the article topic in preprocess call
@@ -514,7 +526,7 @@ class Topic_Wrapper(Model_Wrapper):
     def get_response(self, user_id='', text='', context=None, article=None, **kwargs):
         logging.info('---------------------------------')
         logging.info('Generating topic for the article')
-        if len(self.predicted) > 0:
+        if len(self.predicted) > 0 and self.isMatch(text):
             response = self.predicted[0][0] # give back the top topic
         else:
             response = ''
