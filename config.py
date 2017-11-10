@@ -35,6 +35,11 @@ config_data = {
         'dumb':{
             'dict_file':'data/dumb_questions.json'
         },
+        'topic':{
+            'model_name':'/root/convai/data/yahoo_answers/fast.model.ep50.ng5.word2vec.bin',
+            'dir_name':'data/yahoo_answers/',
+            'top_k' : 2
+        },
         "socket_port" : 8094
 }
 
