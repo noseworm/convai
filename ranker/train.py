@@ -2,14 +2,12 @@ import tensorflow as tf
 import numpy as np
 import cPickle as pkl
 import argparse
-import pyprind
 import copy
 import json
-import time
 import sys
 import os
 
-from estimators import Estimator, ACTIVATIONS, OPTIMIZERS, SHORT_TERM_MODE, LONG_TERM_MODE
+from estimators import Estimator, SHORT_TERM_MODE, LONG_TERM_MODE
 
 import features as _features
 import inspect
@@ -18,6 +16,18 @@ ALL_FEATURES = []
 for name, obj in inspect.getmembers(_features):
     if inspect.isclass(obj) and name not in ['SentimentIntensityAnalyzer', 'Feature']:
         ALL_FEATURES.append(name)
+
+
+MODE_TO_TARGET = {
+    'short_term': 'r',
+    'long_term': 'R'
+}
+
+MODE_TO_FLAG = {
+    'short_term': SHORT_TERM_MODE,
+    'long_term': LONG_TERM_MODE
+}
+
 
 TARGET_TO_FEATURES = {
     'r': [
@@ -253,12 +263,68 @@ def sample_parameters(t):
     return feats, hidds, activs, optims, lrs, drs, bss
 
 
+def load_previous_model(prefix):
+    """
+    :param prefix: example: models/short_term/0.643257/1510158946.66_VoteEstimator_
+    """
+    print "Loading previous model arguments..."
+    with open("%sargs.pkl" % prefix, 'rb') as handle:
+        model_args = pkl.load(handle)
+
+    if len(model_args) == 12:
+        data, \
+        hidden_dims, hidden_dims_extra, activation, \
+        optimizer, learning_rate, \
+        model_path, model_id, model_name, \
+        batch_size, dropout_rate, pretrained = model_args
+    elif len(model_args) == 8:
+        data, \
+        hidden_dims, activation, \
+        optimizer, learning_rate, \
+        model_id, \
+        batch_size, dropout_rate = model_args
+        # reconstruct missing parameters
+        hidden_dims_extra = [hidden_dims[-1]]
+        model_name = prefix.split(model_id)[1].replace('_', '')
+        pretrained = None
+    else:
+        print "WARNING: %d model arguments." % len(model_args)
+        print "data + %s" % (model_args[1:],)
+        return
+
+    # reconstruct model_path just in case it has been moved:
+    model_path = prefix.split(model_id)[0]
+    if model_path.endswith('/'):
+        model_path = model_path[:-1]  # ignore the last '/'
+
+    # Load previously saved model timings
+    with open("%stimings.pkl" % prefix, 'rb') as handle:
+        train_accuracies, valid_accuracies = pkl.load(handle)
+
+    n_folds = len(train_accuracies)
+    max_train = [max(train_accuracies[i]) for i in range(n_folds)]
+    max_valid = [max(valid_accuracies[i]) for i in range(n_folds)]
+    print "prev. max train accuracies: %s" % (max_train,)
+    print "prev. max valid accuracies: %s" % (max_valid,)
+    train_acc = np.mean(max_train)
+    valid_acc = np.mean(max_valid)
+    print "prev. best avg. train accuracy: %g" % train_acc
+    print "prev. best avg. valid accuracy: %g" % valid_acc
+
+    return data, \
+           hidden_dims, hidden_dims_extra, activation, \
+           optimizer, learning_rate, \
+           model_path, model_id, model_name, \
+           batch_size, dropout_rate, pretrained, \
+           train_accuracies, valid_accuracies
+
+
 def main(args):
     if args.explore:
         # sample a bunch of parameters, and run those experiments
         feats, hidds, activs, optims, lrs, drs, bss = sample_parameters(args.explore)
         best_args = []  # store the best combination
-        best_valid_acc = 0.0  # store the best validation accuracy
+        best_valid_acc = -100000.  # store the best validation accuracy
         best_model = None  # store the best model id
         valid_threshold = args.threshold  # accuracy must be higher for model to be saved
         print "Will try %d different configurations..." % args.explore
@@ -276,7 +342,7 @@ def main(args):
                     print "[%d] sampled batch size: %d" % (idx+1, bss[idx])
 
                     # Load datasets
-                    data = get_data(args.data, 'r', feature_list=feats[idx])
+                    data = get_data(args.data, MODE_TO_TARGET[args.mode], feature_list=feats[idx])
                     n_folds = len(data[0])
                     print "[%d] Building the network..." % (idx+1,)
                     estimator = Estimator(
@@ -286,20 +352,22 @@ def main(args):
                         activs[idx],
                         optims[idx],
                         lrs[idx],
-                        model_path='models/short_term'
+                        model_path='models/%s' % args.mode
                     )
                     print "[%d] Training the network..." % (idx+1,)
                     estimator.train(
                         sess,
-                        SHORT_TERM_MODE,
+                        MODE_TO_FLAG[args.mode],
                         args.patience,
                         bss[idx],
                         drs[idx],
                         save=False,  # don't save for now
-                        pretrained=None
+                        pretrained=None,
+                        verbose=False
                     )
-                    max_train = [max(estimator.train_accuracies[i]) for i in range(n_folds)]
-                    max_valid = [max(estimator.valid_accuracies[i]) for i in range(n_folds)]
+                    # Only consider last `n_folds` accuracies!
+                    max_train = [max(estimator.train_accuracies[i]) for i in range(-n_folds, 0)]
+                    max_valid = [max(estimator.valid_accuracies[i]) for i in range(-n_folds, 0)]
                     print "[%d] max train accuracies: %s" % (idx+1, max_train)
                     print "[%d] max valid accuracies: %s" % (idx+1, max_valid)
                     train_acc = np.mean(max_train)
@@ -353,34 +421,64 @@ def main(args):
 
     else:
         # run one experiment with provided parameters
-        # Load datasets
-        data = get_data(args.data, 'r')
-        n_folds = len(data[0])
+        # load previously trained model.
+        if args.previous_model:
+            old_data, \
+            hidden_sizes, hidden_sizes_extra, activation, \
+            optimizer, learning_rate, \
+            model_path, model_id, model_name, \
+            batch_size, dropout_rate, pretrained, \
+            train_accuracies, valid_accuracies = load_previous_model(args.previous_model)
+            # Load provided dataset, but with the same features as previous model
+            data = get_data(args.data, MODE_TO_TARGET[args.mode], feature_list=old_data[-1])
+            # set pretrained to this model name
+            pretrained = (model_path, model_id, model_name)
+            # now update this model name to not override previous one
+            model_name = "%s" % args.previous_model.replace('models', '').replace('.', '').replace('//', '').replace('/', '.')
+            # store previous_accuracies
+            previous_accuracies = (train_accuracies, valid_accuracies)
+        else:
+            # else, build current parameters
+            data = get_data(args.data, MODE_TO_TARGET[args.mode])
+            hidden_sizes = args.hidden_sizes
+            hidden_sizes_extra = [args.hidden_sizes[-1]]
+            activation = args.activation
+            optimizer = args.optimizer
+            learning_rate = args.learning_rate
+            model_id = None  # keep the default one
+            model_name = 'Estimator'
+            batch_size = args.batch_size
+            dropout_rate = args.dropout_rate
+            pretrained = None
+            previous_accuracies = None
 
+        n_folds = len(data[0])
         print "Building the network..."
         estimator = Estimator(
             data,
-            args.hidden_sizes,
-            [args.hidden_sizes[-1]],
-            args.activation,
-            args.optimizer,
-            args.learning_rate,
-            model_path='models/short_term'
+            hidden_sizes,
+            hidden_sizes_extra,
+            activation,
+            optimizer,
+            learning_rate,
+            model_path='models/%s' % args.mode, model_id=model_id, model_name=model_name
         )
 
         with tf.Session() as sess:
             print "Training the network..."
             estimator.train(
                 sess,
-                SHORT_TERM_MODE,
+                MODE_TO_FLAG[args.mode],
                 args.patience,
-                args.batch_size,
-                args.dropout_rate,
+                batch_size,
+                dropout_rate,
                 save=True,
-                pretrained=None
+                pretrained=pretrained,
+                previous_accuracies=previous_accuracies,
+                verbose=True
             )
-            max_train = [max(estimator.train_accuracies[i]) for i in range(n_folds)]
-            max_valid = [max(estimator.valid_accuracies[i]) for i in range(n_folds)]
+            max_train = [max(estimator.train_accuracies[i]) for i in range(-n_folds, 0)]
+            max_valid = [max(estimator.valid_accuracies[i]) for i in range(-n_folds, 0)]
             print "max train accuracies: %s" % (max_train,)
             print "max valid accuracies: %s" % (max_valid,)
             train_acc = np.mean(max_train)
@@ -393,10 +491,12 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("data", nargs='+', type=str, help="List of files to consider for training")
+    parser.add_argument("mode", choices=['short_term', 'long_term'], type=str, help="What reward should the estimator predict")
     parser.add_argument("-g",  "--gpu", type=int, default=0, help="GPU number to use")
     parser.add_argument("-ex", "--explore", type=int, default=None, help="Number of times to sample parameters. If None, will use the one provided")
     parser.add_argument("-t",  "--threshold", type=float, default=0.63, help="minimum accuracy to reach in order to save the model (only used in exploration mode)")
     # training parameters:
+    parser.add_argument("-pm", "--previous_model", default=None, help="path and prefix_ of the model to continue training from")
     parser.add_argument("-bs", "--batch_size", type=int, default=128, help="batch size during training")
     parser.add_argument("-p",  "--patience", type=int, default=20, help="Number of training steps to wait before stoping when validatiaon accuracy doesn't increase")
     # network architecture:
@@ -410,7 +510,7 @@ if __name__ == '__main__':
 
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = "%d" % args.gpu
-    os.environ["TF_CPP_MIN_LOG_LEVEL"] = '3'
+    # os.environ["TF_CPP_MIN_LOG_LEVEL"] = '3'
 
     main(args)
 

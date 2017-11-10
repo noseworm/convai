@@ -50,7 +50,8 @@ class Estimator(object):
         self.model_path = model_path
         if model_id: self.model_id = model_id
         else: self.model_id = str(time.time())
-        self.model_name = model_name
+        if model_name: self.model_name = model_name
+        else: self.model_name = 'Estimator'
 
         self.SHORT_TERM = tf.constant(SHORT_TERM_MODE, dtype=tf.int8, name="SHORT_TERM_MODE")
         self.LONG_TERM  = tf.constant(LONG_TERM_MODE, dtype=tf.int8, name="LONG_TERM_MODE")
@@ -118,8 +119,8 @@ class Estimator(object):
             return tf.losses.softmax_cross_entropy(onehot_labels=onehot_labels, logits=logits)
         # define loss tensor for LONG TERM estimator:
         def _long_term_loss():
-            labels = tf.expand_dims(self.y, axis=1)  # from shape (bs,) to (bs, 1)
-            return tf.losses.mean_squared_error(labels, logits)
+            # labels = tf.expand_dims(self.y, axis=1)  # from shape (bs,) to (bs, 1)
+            return tf.losses.mean_squared_error(self.y, logits[:, 0])
         # Loss tensor: mean squared error for LONG TERM, softmax cross entropy for SHORT_TERM
         self.loss = tf.cond(tf.equal(self.mode, self.LONG_TERM),
                             true_fn  = _long_term_loss,
@@ -140,7 +141,7 @@ class Estimator(object):
             return tf.reduce_mean(tf.cast(correct_predictions, tf.float32))
         # Accuracy tensor:
         self.accuracy = tf.cond(tf.equal(self.mode, self.LONG_TERM),
-                                true_fn  = lambda: 1 - self.loss,
+                                true_fn  = lambda: - self.loss,
                                 false_fn = _short_term_accuracy,
                                 name = "accuracy_tensor")
 
@@ -150,7 +151,7 @@ class Estimator(object):
         # Add ops to save and restore all the variables.
         self.saver = tf.train.Saver()
 
-    def train(self, session, mode, patience, batch_size, dropout_rate, save=True, pretrained=None, previous_accuracies=None):
+    def train(self, session, mode, patience, batch_size, dropout_rate, save=True, pretrained=None, previous_accuracies=None, verbose=True):
         """
         :param session: tensorflow session
         :param mode: Estimator.SHORT_TERM or Estimator.LONG_TERM
@@ -160,6 +161,7 @@ class Estimator(object):
         :param save: decide if we save the model & its parameters
         :param pretrained: list of (model_path, model_id, model_name) for the pretrained model, or None
         :param previous_accuracies: list of (train_accuracies, valid_accuracies) from pretrained model, or None
+        :param verbose: print statements all over the place or not
         """
         self.batch_size = batch_size
         self.dropout_rate = dropout_rate
@@ -179,7 +181,7 @@ class Estimator(object):
             valid_accs = []  # accuracies for this fold, to be added at the end of the fold
             n, _ = x_train.shape
 
-            best_valid_acc = 0.0
+            best_valid_acc = -100000.
             p = patience
 
             print "begin fold %d" % fold,
@@ -204,16 +206,16 @@ class Estimator(object):
                     step = idx / batch_size
                     # if step % 10 == 0:
                     #     print "[fold %d] epoch %d - step %d - training loss: %g" % (fold, epoch+1, step, loss)
-                # print "[fold %d] epoch %d - step %d - training loss: %g" % (fold, epoch+1, step, loss)
+                if verbose: print "[fold %d] epoch %d - step %d - training loss: %g" % (fold, epoch+1, step, loss)
                 # print "------------------------------"
                 # Evaluate (so no dropout) on training set
                 train_acc = self.evaluate(mode, x_train, y_train)
-                # print "[fold %d] epoch %d: train accuracy: %g" % (fold, epoch+1, train_acc)
+                if verbose: print "[fold %d] epoch %d: train accuracy: %g" % (fold, epoch+1, train_acc)
                 train_accs.append(train_acc)
 
                 # Evaluate (so no dropout) on validation set
                 valid_acc = self.evaluate(mode, x_valid, y_valid)
-                # print "[fold %d] epoch %d: valid accuracy: %g" % (fold, epoch+1, valid_acc)
+                if verbose: print "[fold %d] epoch %d: valid accuracy: %g" % (fold, epoch+1, valid_acc)
                 valid_accs.append(valid_acc)
 
                 # early stop
@@ -225,7 +227,7 @@ class Estimator(object):
                         self.save(session, save_args=False, save_timings=False)
                 else:
                     p -= 1
-                # print "[fold %d] epoch %d: patience: %d" % (fold, epoch+1, p)
+                if verbose: print "[fold %d] epoch %d: patience: %d" % (fold, epoch+1, p)
                 if p == 0:
                     break
 
@@ -235,7 +237,7 @@ class Estimator(object):
             if save:
                 # save the arguments and the timings when done this fold
                 self.save(session, save_model=False)
-            # print "------------------------------"
+            if verbose: print "------------------------------"
 
     def test(self, mode, x=None, y=None):
         """

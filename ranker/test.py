@@ -11,6 +11,11 @@ import os
 
 from estimators import Estimator, ACTIVATIONS, OPTIMIZERS, SHORT_TERM_MODE, LONG_TERM_MODE
 
+MODE_TO_FLAGS = {
+    'short_term': SHORT_TERM_MODE,
+    'long_term': LONG_TERM_MODE
+}
+
 
 def main(args):
     # Load previously saved model arguments
@@ -25,6 +30,7 @@ def main(args):
         model_path, model_id, model_name, \
         batch_size, dropout_rate, pretrained = model_args
     elif len(model_args) == 8:
+        print "WARNING: %d model arguments. Reconstructing missing arguments."
         data, \
         hidden_dims, activation, \
         optimizer, learning_rate, \
@@ -35,7 +41,7 @@ def main(args):
         model_name = args.model.split(model_id)[1].replace('_', '')
         pretrained = None
     else:
-        print "WARNING: %d model arguments." % len(model_args)
+        print "ERROR: %d model arguments." % len(model_args)
         print "data + %s" % (model_args[1:],)
         return
 
@@ -48,9 +54,10 @@ def main(args):
     with open("%stimings.pkl" % args.model, 'rb') as handle:
         train_accuracies, valid_accuracies = pkl.load(handle)
 
-    n_folds = len(train_accuracies)
-    max_train = [max(train_accuracies[i]) for i in range(n_folds)]
-    max_valid = [max(valid_accuracies[i]) for i in range(n_folds)]
+    n_folds = len(data[0])
+    # consider only the last `n_folds` accuracies! Accuracies before that may be from another objective
+    max_train = [max(train_accuracies[i]) for i in range(-n_folds, 0)]
+    max_valid = [max(valid_accuracies[i]) for i in range(-n_folds, 0)]
     print "prev. max train accuracies: %s" % (max_train,)
     print "prev. max valid accuracies: %s" % (max_valid,)
     train_acc = np.mean(max_train)
@@ -70,23 +77,24 @@ def main(args):
         print "Reset network parameters..."
         estimator.load(sess, model_path, model_id, model_name)
         print "Testing the network..."
-        test_acc = estimator.test(SHORT_TERM_MODE)
+        test_acc = estimator.test(MODE_TO_FLAGS[args.mode])
         print "test accuracy: %g" % test_acc
 
         # print "\nContinue training the network..."
         # estimator.train(
         #     sess,
-        #     SHORT_TERM_MODE,
+        #     MODE_TO_FLAGS[args.mode],
         #     args.patience,
         #     batch_size,
         #     dropout_rate,
         #     save=False,
         #     pretrained=(model_path, model_id, model_name),
-        #     previous_accuracies=(train_accuracies, valid_accuracies)
+        #     previous_accuracies=(train_accuracies, valid_accuracies),
+        #     verbose=True
         # )
-        # n_folds = len(estimator.train_accuracies)  # number of folds x2 now that we retrained
-        # max_train = [max(estimator.train_accuracies[i]) for i in range(n_folds)]
-        # max_valid = [max(estimator.valid_accuracies[i]) for i in range(n_folds)]
+        # Consider the newly added accuracies!
+        # max_train = [max(estimator.train_accuracies[i]) for i in range(-n_folds, 0)]
+        # max_valid = [max(estimator.valid_accuracies[i]) for i in range(-n_folds, 0)]
         # print "max train accuracies: %s" % (max_train,)
         # print "max valid accuracies: %s" % (max_valid,)
         # train_acc = np.mean(max_train)
@@ -94,31 +102,42 @@ def main(args):
         # print "best avg. train accuracy: %g" % train_acc
         # print "best avg. valid accuracy: %g" % valid_acc
         # print "Re-testing the network..."
-        # test_acc = estimator.test(SHORT_TERM_MODE)
+        # test_acc = estimator.test(MODE_TO_FLAGS[args.mode])
         # print "test accuracy: %g" % test_acc
 
-        print "Get train, valid, test prediction on fold %d..."
+        print "Get train, valid, test prediction..."
         trains, valids, (x_test, y_test), feature_list = data
         train_acc, valid_acc = [], []
         for fold in range(len(trains)):
-            train_predictions = estimator.predict(SHORT_TERM_MODE, trains[fold][0])
-            same = float(np.sum(train_predictions == trains[fold][1]))
+            train_predictions = estimator.predict(MODE_TO_FLAGS[args.mode], trains[fold][0])
+            if args.mode == 'short_term':
+                same = float(np.sum(train_predictions == trains[fold][1]))
+                # TODO: compute true/false positives/negatives
+            else:
+                same = -np.sum((train_predictions - trains[fold][1])**2)
+                # TODO: plot x:labels y:predictions ~ confusion matrix/plot
             acc  = same/len(train_predictions)
             train_acc.append(acc)
-            print "[fold %d] train acc: %d/%d=%g" % (fold+1, same, len(train_predictions), acc)
+            print "[fold %d] train acc: %g/%d=%g" % (fold+1, same, len(train_predictions), acc)
 
-            valid_predictions = estimator.predict(SHORT_TERM_MODE, valids[fold][0])
-            same = float(np.sum(valid_predictions == valids[fold][1]))
+            valid_predictions = estimator.predict(MODE_TO_FLAGS[args.mode], valids[fold][0])
+            if args.mode == 'short_term':
+                same = float(np.sum(valid_predictions == valids[fold][1]))
+            else:
+                same = -np.sum((valid_predictions - valids[fold][1])**2)
             acc  = same/len(valid_predictions)
             valid_acc.append(acc)
-            print "[fold %d] valid acc: %d/%d=%g" % (fold+1, same, len(valid_predictions), acc)
+            print "[fold %d] valid acc: %g/%d=%g" % (fold+1, same, len(valid_predictions), acc)
 
         print "avg. train acc. %g" % np.mean(train_acc)
         print "avg. valid acc. %g" % np.mean(valid_acc)
-        test_predictions  = estimator.predict(SHORT_TERM_MODE, x_test)
-        same = float(np.sum(test_predictions == y_test))
+        test_predictions  = estimator.predict(MODE_TO_FLAGS[args.mode], x_test)
+        if args.mode == 'short_term':
+            same = float(np.sum(test_predictions == y_test))
+        else:
+            same = -np.sum((test_predictions - y_test)**2)
         acc = same/len(test_predictions)
-        print "test acc: %d/%d=%g" % (same, len(test_predictions), acc)
+        print "test acc: %g/%d=%g" % (same, len(test_predictions), acc)
 
     print "done."
 
@@ -126,6 +145,7 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("model", type=str, help="Model prefix to load")
+    parser.add_argument("mode", type=str, choices=['short_term', 'long_term'], help="test on SHORT TERM or LONG TERM accuracy")
     parser.add_argument("-g",  "--gpu", type=int, default=0, help="GPU number to use")
     parser.add_argument("-p",  "--patience", type=int, default=5, help="Number of training steps to wait before stoping when validatiaon accuracy doesn't increase")
     args = parser.parse_args()

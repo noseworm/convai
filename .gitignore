@@ -27,7 +27,7 @@ leaderboard.csv
 leaderboard.md
 *.pkl
 data/wikipedia/
-ranker/models/*_term/0.6*/*.ckpt*
+ranker/models/*_term/*/*.ckpt*
 ranker/models/*/checkpoint
 ranker/data/*.json
 ranker/data/*.features/
