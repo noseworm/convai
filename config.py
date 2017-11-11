@@ -42,7 +42,8 @@ config_data = {
         },
         "socket_port" : 8094,
         "ranker": {
-            "model" : "/root/convai/ranker/models/short_term/0.643257/1510158946.66_VoteEstimator_args.pkl"
+            "model_short" : "/root/convai/ranker/models/short_term/0.641391/1510248853.21_Estimator_args.pkl",
+            "model_long" : "/root/convai/ranker/models/long_term/1.4506/1510248853.21_short_term.0641391.151024885321_Estimator__args.pkl"
         }
 }
 

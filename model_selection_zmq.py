@@ -6,10 +6,13 @@ import copy
 import spacy
 import re
 import time
+import tensorflow as tf
+import numpy as np
 import emoji
 import json
 import cPickle as pkl
 from ranker import features
+from ranker.estimators import Estimator, LONG_TERM_MODE, SHORT_TERM_MODE
 from Queue import Queue
 from threading import Thread
 from multiprocessing import Process, Pool
@@ -263,13 +266,77 @@ modelIds = [ModelID.ECHO, ModelID.CAND_QA, ModelID.HRED_TWITTER,
 # TODO: or probably a pattern catcher?
 dumb_qa_model = DumbQuestions_Wrapper(
     '', conf.dumb['dict_file'], ModelID.DUMB_QA)
-# TODO: Load model to get the feature list to be used
-# The model should be mentioned in the config file
-model_args = []
-with open(conf.ranker['model'],'rb') as fp:
-    model_args = pkl.load(fp)
-# Load the feature list
-feature_list = model_args[0][-1]
+
+###
+# Load ranker models
+###
+
+# short term estimator
+ranker_args_short = []
+with open(conf.ranker['model_short'],'rb') as fp:
+    data_short, hidden_dims_short, hidden_dims_extra_short, activation_short, \
+      optimizer_short, learning_rate_short, \
+      model_path_short, model_id_short, model_name_short, _, _, _ \
+    = pkl.load(fp)
+# load the feature list used in short term ranker
+feature_list_short = data_short[-1]
+# reconstruct model_path just in case file have been moved:
+model_path_short = conf.ranker['model_short'].split(model_id_short)[0]
+if model_path_short.endswith('/'):
+    model_path_short = model_path_short[:-1]  # ignore the last '/'
+
+# long term estimator
+ranker_args_long = []
+with open(conf.ranker['model_long'], 'rb') as fp:
+    data_long, hidden_dims_long, hidden_dims_extra_long, activation_long, \
+      optimizer_long, learning_rate_long, \
+      model_path_long, model_id_long, model_name_long, _, _, _ \
+    = pkl.load(fp)
+# load the feature list user in short term ranker
+feature_list_long = data[-1]
+# reconstruct model_path just in case file have been moved:
+model_path_long = conf.ranker['model_long'].split(model_id_long)[0]
+if model_path_long.endswith('/'):
+    model_path_long = model_path_long[:-1]  # ignore the last '/'
+
+assert feature_list_short == feature_list_long
+# NOTE: could also check equality between the following variables, but its redundant:
+# - hidden_dims_short       & hidden_dims_long
+# - hidden_dims_extra_short & hidden_dims_extra_long
+# - activation_short        & activation_long
+# - optimizer_short         & optimizer_long
+# - learning_rate_short     & learning_rate_long
+
+###
+# Build ranker models and set their parameters
+###
+# NOTE: stupid theano can't load two graph within the same session -_-
+# SOLUTION: taken from https://stackoverflow.com/a/41646443
+model_graph_short = tf.Graph()
+with model_graph_short.as_default():
+    estimator_short = Estimator(
+        data_short, hidden_dims_short, hidden_dims_extra_short, activation_short,
+        optimizer_short, learning_rate_short,
+        model_path_short, model_id_short, model_name_short
+    )
+model_graph_long = tf.Graph()
+with model_graph_long.as_default():
+    estimator_long = Estimator(
+        data_long, hidden_dims_long, hidden_dims_extra_long, activation_long,
+        optimizer_long, learning_rate_long,
+        model_path_long, model_id_long, model_name_long
+    )
+# Wrap ANY call to the rankers within those two sessions:
+sess_short = tf.Session(graph=model_graph_short)
+sess_long  = tf.Session(graph=model_graph_long)
+# example: reload trained parameters
+with sess_short.as_default():
+    with model_graph_short.as_default():
+        estimator_short.load(sess_short, model_path_short, model_id_short, model_name_short)
+with sess_long.as_default():
+    with model_graph_long.as_default():
+        estimator_long.load(sess_long, model_path_long, model_id_short, model_name_short)
+# TODO: close the two sessions when not needed anymore! ie: at the of each chat
 
 
 def start_models():
@@ -335,13 +402,31 @@ def act():
             packet['features'] = features.get(
                     article_text[chat_id], context_till_now,
                     packet['text'],
-                    feature_list)
+                    feature_list_short)  # recall: `feature_list_short` & `feature_list_long` are the same
             logging.info("Done feature calculation for model {}".format(packet['model_name']))
+            # Run approximator and save the score in packet
+            logging.info("Scoring the candidate response for model {}".format(packet['model_name']))
+            # Get the input vector to the estimators from the feature instances lise:
+            candidate_vector = np.concatenate([packet['features'][idx].feat for idx in range(len(feature_list_short))])
+            input_dim = len(candidate_vector)
+            candidate_vector = candidate_vector.reshape(1, input_dim) # make an array of shape (1, input)
+            # Get predictions for this candidate response:
+            with sess_short.as_default():
+                with model_graph_short.as_default():
+                    # get predicted class (0: downvote, 1: upvote), and confidence (ie: proba of upvote)
+                    vote, conf = estimator_short.predict(SHORT_TERM_MODE, candidate_vector)
+                    assert len(vote) == len(conf) == 1  # sanity check with batch size of 1
+            with sess_long.as_default():
+                with model_graph_long.as_default():
+                    # get the predicted end-of-dialogue score:
+                    pred, _ = estimator_long.predict(LONG_TERM_MODE, candidate_vector)
+                    assert len(pred) == 1  # sanity check with batch size of 1
+            packet['vote'] = vote[0]  # 0 = downvote ; 1 = upvote
+            packet['conf'] = conf[0]  # 0.0 < Pr(upvote) < 1.0
+            packet['score'] = pred[0] # 1.0 < end-of-chat score < 5.0
             # Now store the packet in dict
             model_responses[packet['chat_unique_id']
                             ][packet['model_name']] = packet
-
-            # TODO: Run approximator here and save the score in packet
         else:
             logging.info('Discarding message from model {} for chat id {}'.format(
                 packet['model_name'], packet['chat_id']))

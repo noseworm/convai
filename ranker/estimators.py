@@ -324,6 +324,6 @@ class Estimator(object):
             model_id   = self.model_id
             model_name = self.model_name
         self.saver.restore(session, "./%s/%s_%s_model.ckpt" % (model_path, model_id, model_name))
-        print "Model restored to %s/%s_%s." % (model_path, model_id, model_name)
+        print "Model restored to %s/%s_%s" % (model_path, model_id, model_name)
 
 
