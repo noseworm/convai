@@ -1,5 +1,4 @@
-# should contain wrapper classes
-
+import zmq
 import cPickle
 import logging
 import numpy as np
@@ -534,10 +533,22 @@ class Topic_Wrapper(Model_Wrapper):
         return response, context
 
 
+class DrQA_Wiki_Wrapper(Model_Wrapper):
+    def __init__(self, model_prefix, dict_fname, name):
+        super(DrQA_Wiki_Wrapper, self).__init__(model_prefix, name)
 
+    def get_response(self, user_id='', text='', context=None, article=None, **kwargs):
+        logging.info('------------------------------------')
+        logging.info('Generating DrQA WIKI response for user %s.' % user_id)
+        cont = zmq.Context()
+        socket = cont.socket(zmq.REQ)
+        socket.connect("ipc:///tmp/drqa.pipe")
+        socket.send_json({'question': text, 'top_n': 1, 'n_docs': 5})
+        reply = socket.recv_json()
 
+        response = reply['span']
+        response = self._format_to_user(response)
+        context.append(self._format_to_model(response, len(context)))
+        return response, context
 
-
-
-        
 
