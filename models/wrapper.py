@@ -449,9 +449,11 @@ class NQG_Wrapper(Model_Wrapper):
         logging.info('Generating NQG question for user %s.' % user_id)
         response = ''
         if len(self.questions) > 0:
-            response = self.questions[user_id][0]['pred']
-            self.questions[user_id][0]['used'] += 1
-            self.questions[user_id].sort(key=lambda x: x["used"])
+            qs = [(i,q) for i,q in enumerate(self.questions[user_id]) if q['used'] == 0]
+            if len(qs) > 0:
+                response = qs[0][1]['pred']
+                self.questions[user_id][qs[0][0]]['used'] += 1
+                self.questions[user_id].sort(key=lambda x: x["used"])
 
         context.append(self._format_to_model(response, len(context)))
         return response, context

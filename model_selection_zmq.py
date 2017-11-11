@@ -66,6 +66,8 @@ class Policy:
     DE_DRQA = 6      # DualEncoder:0.5 & DrQA:0.5
     START = 7
     FIXED = 8        # when allowed_model = True
+    LEARNED = 9      # Learned policy ranker
+    BORED = 10
 
 
 class ModelID:
@@ -376,6 +378,7 @@ policy_mode = Policy.NONE
 job_queue = Queue()
 response_queue = Queue()
 model_responses = {}
+used_models = {}      # This dictionary should contain an array per chat_id on the history of used models
 # self.models = [self.hred_twitter, self.hred_reddit,
 #               self.dual_enc, self.qa_hred, self.dumb_qa, self.drqa]
 # modelIds = [ModelID.HRED_TWITTER, ModelID.HRED_REDDIT, ModelID.DUAL_ENCODER,
@@ -525,7 +528,42 @@ def strip_emojis(str):
         return text, emojis
     return str, None
 
-# TODO: set allowed_model for model based debugging
+# given a set of model_responses, rank the best one based on
+# the following policy:
+# return ModelID of the model to select, else None
+# also return a list of models to NOT consider, else None
+# which indicates to take the pre-calculated policy
+def ranker(chat_unique_id):
+    consider_models = [] # array containing tuple of (model_name, rank_score) for 1
+    dont_consider_models = [] # for 0
+    all_models = [] # for debugging purpose
+    logging.info("Ranking among models : {}".format(model_responses[chat_unique_id].keys()))
+    for model, response in model_responses[chat_unique_id].iteritems():
+        conf = float(response['conf'])
+        vote = float(response['vote'])
+        score = float(response['score'])
+        if conf > 0.75:
+            if score > 4:
+                rank_score = conf * score
+                if model != ModelID.NQG:
+                    consider_models.append((model, rank_score))
+        if conf < 0.25:
+            if score < 2:
+                rank_score = conf * score
+                if model != ModelID.ECHO: # keep echo model for failure handling case
+                    dont_consider_models.append((model, rank_score))
+        all_models.append((model, conf * score))
+    all_models = sorted(all_models, key=lambda x:x[1], reverse=True)
+    logging.info(all_models)
+    consider = None
+    dont_consider = None
+    if len(consider_models) > 0:
+        consider_models = sorted(consider_models, key=lambda x:x[1], reverse=True)
+        consider = consider_models[0][0]
+    elif len(dont_consider_models) > 0:
+        dont_consider = dont_consider_models
+    return consider, dont_consider
+
 
 
 def get_response(chat_id, text, context, allowed_model=None):
@@ -646,7 +684,6 @@ def get_response(chat_id, text, context, allowed_model=None):
         response = model_responses[chat_unique_id][selection]
         response['policyID'] = Policy.START
     else:
-        # TODO: Replace this with ranking. Now using the optimal policy
         # check if allowed_model is set, then only reply from the allowed
         # model. This is done for debugging.
         # TODO: Probably remove this before final submission?
@@ -678,41 +715,58 @@ def get_response(chat_id, text, context, allowed_model=None):
                 # get list of common nouns between article and question
                 common = list(set(article_nouns[chat_id]).intersection(
                     set(text.split(' '))))
-                print 'common nouns between question and article:', common
+                logging.info('Common nouns between question and article: {}'.format(common))
                 # if there is a common noun between question and article
                 # select DrQA
-                if len(common) > 0 and ModelID.DRQA in model_responses:
+                if len(common) > 0 and ModelID.DRQA in model_responses[chat_unique_id]:
                     response = model_responses[
                         chat_unique_id][ModelID.DRQA]
                     response['policyID'] = Policy.FIXED
 
     if not response:
-        # if text contains 2 words or less, add 1 to the bored count
-        if len(text.strip().split()) <= 2:
-            boring_count[chat_id] += 1
-        # if user is bored, change the topic by asking a question
-        # (only if that question is not asked before)
-        if boring_count[chat_id] >= BORED_COUNT:
-            response = model_responses[
-                chat_unique_id][ModelID.CAND_QA]
-            boring_count[chat_id] = 0  # reset bored count to 0
+        # Ranker based selection
+        best_model, dont_consider = ranker(chat_unique_id)
+        if dont_consider and len(dont_consider) > 0:
+            for model,score in dont_consider:
+                del model_responses[chat_unique_id][model] # remove the models from futher consideration
 
-        # randomly decide a model to query to get a response:
-        models = [ModelID.HRED_REDDIT, ModelID.HRED_TWITTER,
-                  ModelID.DUAL_ENCODER, ModelID.NQG]
-        if '?' in text:
-            # if the user asked a question, also consider DrQA
-            models.append(ModelID.DRQA)
+        if best_model:
+            response = model_responses[chat_unique_id][best_model]
+            response['policyID'] = Policy.LEARNED
         else:
-            # if the user didn't ask a question, also consider hred-qa
-            models.append(ModelID.FOLLOWUP_QA)
+            # fallback to optimal policy
+            # if text contains 2 words or less, add 1 to the bored count
+            if len(text.strip().split()) <= 2:
+                boring_count[chat_id] += 1
+            # if user is bored, change the topic by asking a question
+            # (only if that question is not asked before)
+            boring_avl = list(set(model_responses[chat_unique_id])
+                    .intersection(set([ModelID.NQG, ModelID.CAND_QA])))
+            if boring_count[chat_id] >= BORED_COUNT and len(boring_avl):
+                selection = random.choice(boring_avl)
+                response = model_responses[chat_unique_id][selection]
+                response['policyID'] = Policy.BORED
+                boring_count[chat_id] = 0  # reset bored count to 0
+            else:
+                # TODO: have choice of probability. Given the past model usage,
+                # if HRED_TWITTER or HRED_REDDIT is used, then decay the
+                # probability by small amount
+                # randomly decide a model to query to get a response:
+                models = [ModelID.HRED_REDDIT, ModelID.HRED_TWITTER,
+                          ModelID.DUAL_ENCODER]
+                if '?' in text:
+                    # if the user asked a question, also consider DrQA
+                    models.append(ModelID.DRQA)
+                else:
+                    # if the user didn't ask a question, also consider hred-qa
+                    models.append(ModelID.FOLLOWUP_QA)
 
-        available_models = list(set(model_responses[chat_unique_id]).intersection(models))
-        if len(available_models) > 0:
-            chosen_model = random.choice(available_models)
-            response = model_responses[chat_unique_id][chosen_model]
+                available_models = list(set(model_responses[chat_unique_id]).intersection(models))
+                if len(available_models) > 0:
+                    chosen_model = random.choice(available_models)
+                    response = model_responses[chat_unique_id][chosen_model]
 
-        response['policyID'] = Policy.OPTIMAL
+                response['policyID'] = Policy.OPTIMAL
 
     # if still no response, then just send a random emoji
     if not response or 'text' not in response:
