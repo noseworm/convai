@@ -210,13 +210,13 @@ class ModelClient():
         ###
         # NOTE: stupid theano can't load two graph within the same session -_-
         # SOLUTION: taken from https://stackoverflow.com/a/41646443
-        #self.model_graph_short = tf.Graph()
-        #with self.model_graph_short.as_default():
-        #    self.estimator_short = Estimator(
-        #        data_short, hidden_dims_short, hidden_dims_extra_short, activation_short,
-        #        optimizer_short, learning_rate_short,
-        #        model_path_short, model_id_short, model_name_short
-        #    )
+        self.model_graph_short = tf.Graph()
+        with self.model_graph_short.as_default():
+            self.estimator_short = Estimator(
+                data_short, hidden_dims_short, hidden_dims_extra_short, activation_short,
+                optimizer_short, learning_rate_short,
+                model_path_short, model_id_short, model_name_short
+            )
         self.model_graph_long = tf.Graph()
         with self.model_graph_long.as_default():
             self.estimator_long = Estimator(
@@ -226,16 +226,16 @@ class ModelClient():
             )
         logging.info("Init session")
         # Wrap ANY call to the rankers within those two sessions:
-        #self.sess_short = tf.Session(graph=self.model_graph_short)
+        self.sess_short = tf.Session(graph=self.model_graph_short)
         self.sess_long  = tf.Session(graph=self.model_graph_long)
         logging.info("Done init session")
         # example: reload trained parameters
-        #logging.info("Loading trained params short")
-        #with self.sess_short.as_default():
-        #    with self.model_graph_short.as_default():
-        #        self.estimator_short.load(self.sess_short, model_path_short, model_id_short, model_name_short)
+        logging.info("Loading trained params short")
+        with self.sess_short.as_default():
+            with self.model_graph_short.as_default():
+                self.estimator_short.load(self.sess_short, model_path_short, model_id_short, model_name_short)
         logging.info("Loading trained params long")
-        with sess_long.as_default():
+        with self.sess_long.as_default():
             with self.model_graph_long.as_default():
                 self.estimator_long.load(self.sess_long, model_path_long, model_id_long, model_name_long)
         # TODO: close the two sessions when not needed anymore! ie: at the of each chat
@@ -312,20 +312,20 @@ class ModelClient():
                         input_dim = len(candidate_vector)
                         candidate_vector = candidate_vector.reshape(1, input_dim) # make an array of shape (1, input)
                         # Get predictions for this candidate response:
-                        #with self.sess_short.as_default():
-                        #    with self.model_graph_short.as_default():
-                        #        logging.info("estimator short predicting")
-                        #        # get predicted class (0: downvote, 1: upvote), and confidence (ie: proba of upvote)
-                        #        vote, conf = self.estimator_short.predict(SHORT_TERM_MODE, candidate_vector)
-                        #        assert len(vote) == len(conf) == 1  # sanity check with batch size of 1
+                        with self.sess_short.as_default():
+                            with self.model_graph_short.as_default():
+                                logging.info("estimator short predicting")
+                                # get predicted class (0: downvote, 1: upvote), and confidence (ie: proba of upvote)
+                                vote, conf = self.estimator_short.predict(SHORT_TERM_MODE, candidate_vector)
+                                assert len(vote) == len(conf) == 1  # sanity check with batch size of 1
                         with self.sess_long.as_default():
                             with self.model_graph_long.as_default():
                                 logging.info("estimator long prediction")
                                 # get the predicted end-of-dialogue score:
                                 pred, _ = self.estimator_long.predict(LONG_TERM_MODE, candidate_vector)
                                 assert len(pred) == 1  # sanity check with batch size of 1
-                        vote = -1 #vote[0]  # 0 = downvote ; 1 = upvote
-                        conf = -1 # conf[0]  # 0.0 < Pr(upvote) < 1.0
+                        vote = vote[0]  # 0 = downvote ; 1 = upvote
+                        conf = conf[0]  # 0.0 < Pr(upvote) < 1.0
                         score = pred[0] # 1.0 < end-of-chat score < 5.0
                     else:
                         vote = -1
@@ -359,6 +359,9 @@ class ModelClient():
                 time.sleep(1)
             logging.info("Exiting {} client".format(self.model_name))
         except (KeyboardInterrupt, SystemExit):
+            logging.info("Cleaning tf variables")
+            self.sess_short.close()
+            self.sess_long.close()
             logging.info("Shutting down {} client".format(self.model_name))
 
 
