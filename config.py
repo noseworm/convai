@@ -40,7 +40,10 @@ config_data = {
             'dir_name':'data/yahoo_answers/',
             'top_k' : 2
         },
-        "socket_port" : 8094
+        "socket_port" : 8094,
+        "ranker": {
+            "model" : "/root/convai/ranker/models/short_term/0.643257/1510158946.66_VoteEstimator_args.pkl"
+        }
 }
 
 def get_config():
