@@ -8,6 +8,8 @@ import re
 import time
 import emoji
 import json
+import cPickle as pkl
+from ranker import features
 from Queue import Queue
 from threading import Thread
 from multiprocessing import Process, Pool
@@ -240,6 +242,7 @@ class ModelClient():
 # Initialize variables
 
 article_text = {}     # map from chat_id to article text
+chat_history = {}     # save the context / response pairs for a particular chat here
 candidate_model = {}  # map from chat_id to a simple model for the article
 article_nouns = {}    # map from chat_id to a list of nouns in the article
 boring_count = {}     # number of times the user responded with short answer
@@ -260,6 +263,13 @@ modelIds = [ModelID.ECHO, ModelID.CAND_QA, ModelID.HRED_TWITTER,
 # TODO: or probably a pattern catcher?
 dumb_qa_model = DumbQuestions_Wrapper(
     '', conf.dumb['dict_file'], ModelID.DUMB_QA)
+# TODO: Load model to get the feature list to be used
+# The model should be mentioned in the config file
+model_args = []
+with open(conf.ranker['model'],'rb') as fp:
+    model_args = pkl.load(fp)
+# Load the feature list
+feature_list = model_args[0][-1]
 
 
 def start_models():
@@ -316,8 +326,22 @@ def act():
     while True:
         packet = socket.recv_json()
         if packet['chat_unique_id'] in model_responses:
+            # calculate the features here
+            chat_id = packet['chat_id']
+            context = packet['context']
+            logging.info("Calculating features for model {}".format(packet['model_name']))
+            # Context history is in chat_history[<chat_id>]
+            context_till_now = chat_history[chat_id] + [context[-1]]
+            packet['features'] = features.get(
+                    article_text[chat_id], context_till_now,
+                    packet['text'],
+                    feature_list)
+            logging.info("Done feature calculation for model {}".format(packet['model_name']))
+            # Now store the packet in dict
             model_responses[packet['chat_unique_id']
                             ][packet['model_name']] = packet
+
+            # TODO: Run approximator here and save the score in packet
         else:
             logging.info('Discarding message from model {} for chat id {}'.format(
                 packet['model_name'], packet['chat_id']))
@@ -409,14 +433,18 @@ def get_response(chat_id, text, context, allowed_model=None):
         text = re.sub(r'https?:\/\/.*[\r\n]*',
                       '', text, flags=re.MULTILINE)
         # save the article for later use
-        article_text[chat_id] = nlp(unicode(text))
+        article_text[chat_id] = text
+        article_nlp = nlp(unicode(text))
         # save all nouns from the article
         article_nouns[chat_id] = [
-            p.text for p in article_text[chat_id] if p.pos_ == 'NOUN'
+            p.text for p in article_nlp if p.pos_ == 'NOUN'
         ]
 
         # initialize bored count to 0 for this new chat
         boring_count[chat_id] = 0
+
+        # initialize chat history
+        chat_history[chat_id] = []
 
         # fire global preprocess call
         submit_job(job_type='preprocess',
@@ -456,8 +484,10 @@ def get_response(chat_id, text, context, allowed_model=None):
     # if we have answer ready before the wait period, exit and return the answer
     done_processing = False
     wait_for = WAIT_TIME
-    # response should be a tuple of (response, context, model_name, policy_mode)
+    # response should be a dict of (response, context, model_name, policy_mode)
     response = {}
+    # add feature list as another key of response
+    done_features = set()
     while not done_processing and wait_for > 0:
         if is_start:
             if (ModelID.CAND_QA not in
@@ -470,8 +500,6 @@ def get_response(chat_id, text, context, allowed_model=None):
                 done_processing = True
                 break
         else:
-            # TODO: Run NN Model selection approximator here on whichever
-            # responses are coming in
             # if allowed model is not all, then wait for it to arrive
             # by elongating the wait_for time (useful for debugging certain
             # models)
@@ -492,8 +520,8 @@ def get_response(chat_id, text, context, allowed_model=None):
     # got the responses, now choose which one to send.
     if is_start:
         # TODO: replace this with a proper choice / always NQG?
-        # TODO: for debugging, not using NQG
-        choices = [ModelID.CAND_QA] #[ModelID.CAND_QA, ModelID.NQG]
+        choices = list(set([ModelID.CAND_QA, ModelID.NQG])
+                .intersection(set(model_responses[chat_unique_id].keys())))
         selection = random.choice(choices)
         response = model_responses[chat_unique_id][selection]
         response['policyID'] = Policy.START
@@ -574,6 +602,11 @@ def get_response(chat_id, text, context, allowed_model=None):
 
 
     # Now we have a response, so send it back to bot host
+    # add user and response pair in chat_history
+    chat_history[response['chat_id']].append(response['context'][-1])
+    chat_history[response['chat_id']].append(response['text'])
+    # remove the features because it is not JSON serializable
+    del response['features']
     # Again use ZMQ, because lulz
     response_queue.put(response)
     # clean the unique chat ID
