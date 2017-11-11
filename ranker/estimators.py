@@ -277,7 +277,7 @@ class Estimator(object):
             feed_dict={self.x: x, self.keep_prob: 1.0, self.mode: mode}
         )
         confs = self.confidences.eval(
-            feed_dict={self.x: x, self.keep_ptob: 1.0, self.mode: mode}
+            feed_dict={self.x: x, self.keep_prob: 1.0, self.mode: mode}
         )
         return preds, confs
 
