@@ -102,7 +102,7 @@ class Estimator(object):
         logits = tf.cond(tf.equal(self.mode, self.LONG_TERM),
                          true_fn  = lambda: tf.layers.dense(inputs=h_fc_drop, units=1),
                          false_fn = lambda: tf.layers.dense(inputs=h_fc_drop, units=2),
-                         name='logits_layer')  # (bs, 1) or (bs, 2)
+                         name='logits_layer')  # shape (bs, 1) or (bs, 2)
 
         # Prediction tensor: logit's first axis for LONG_TERM, logit's argmax for SHORT_TERM
         self.predictions = tf.cond(tf.equal(self.mode, self.LONG_TERM),
@@ -110,6 +110,12 @@ class Estimator(object):
                                    # convert argmax to float32 to be compatible with LONG_TERM logit's type:
                                    false_fn = lambda: tf.cast(tf.argmax(logits, axis=1), tf.float32),
                                    name='prediction_tensor')  # shape (bs,)
+
+        # Confidence tensor: only used in the SHORT_TERM mode: probability of up-vote, in LONG_TERM mode same as predictions
+        self.confidences = tf.cond(tf.equal(self.mode, self.LONG_TERM),
+                                   true_fn  = lambda: logits[:, 0],
+                                   false_fn = lambda: tf.nn.softmax(logits, dim=1)[:, 1],
+                                   name='confidence_tensor')  # shape (bs,)
 
         # define loss tensor for SHORT TERM estimator:
         def _short_term_loss():
@@ -134,8 +140,8 @@ class Estimator(object):
         # define accuracy for short term estimator:
         def _short_term_accuracy():
             # define class label (0,1) and class probabilities:
-            classes = tf.argmax(logits, axis=1, name="shortterm_pred_classes")   # (bs,)
-            probabilities = tf.nn.softmax(logits, name="shortterm_pred_probas")  # (bs, 2)
+            # classes = tf.argmax(logits, axis=1, name="shortterm_pred_classes")   # (bs,)
+            classes = tf.cast(self.predictions, tf.int64)  # (bs,)
             # Accuracy tensor:
             correct_predictions = tf.equal(classes, self.y)
             return tf.reduce_mean(tf.cast(correct_predictions, tf.float32))
@@ -263,12 +269,17 @@ class Estimator(object):
     def predict(self, mode, x):
         """
         :param mode: SHORT_TERM or LONG_TERM: different prediction definition
-        :return: prediction tensor to the user
+        :return: prediction tensor to the user and the model's confidence:
+          if mode is LONG_TERM, then confidence and predictions are the same
+          if mode is SHORT_TERM, confidence is the probability of an up-vote
         """
-        pred = self.predictions.eval(
+        preds = self.predictions.eval(
             feed_dict={self.x: x, self.keep_prob: 1.0, self.mode: mode}
         )
-        return pred
+        confs = self.confidences.eval(
+            feed_dict={self.x: x, self.keep_ptob: 1.0, self.mode: mode}
+        )
+        return preds, confs
 
     def save(self, session, save_model=True, save_args=True, save_timings=True):
         prefix = "./%s/%s_%s" % (self.model_path, self.model_id, self.model_name)

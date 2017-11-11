@@ -109,35 +109,35 @@ def main(args):
         trains, valids, (x_test, y_test), feature_list = data
         train_acc, valid_acc = [], []
         for fold in range(len(trains)):
-            train_predictions = estimator.predict(MODE_TO_FLAGS[args.mode], trains[fold][0])
+            preds, confs = estimator.predict(MODE_TO_FLAGS[args.mode], trains[fold][0])
             if args.mode == 'short_term':
-                same = float(np.sum(train_predictions == trains[fold][1]))
+                same = float(np.sum(preds == trains[fold][1]))
                 # TODO: compute true/false positives/negatives
             else:
-                same = -np.sum((train_predictions - trains[fold][1])**2)
+                same = -np.sum((preds - trains[fold][1])**2)
                 # TODO: plot x:labels y:predictions ~ confusion matrix/plot
-            acc  = same/len(train_predictions)
+            acc  = same/len(preds)
             train_acc.append(acc)
-            print "[fold %d] train acc: %g/%d=%g" % (fold+1, same, len(train_predictions), acc)
+            print "[fold %d] train acc: %g/%d=%g" % (fold+1, same, len(preds), acc)
 
-            valid_predictions = estimator.predict(MODE_TO_FLAGS[args.mode], valids[fold][0])
+            preds, confs = estimator.predict(MODE_TO_FLAGS[args.mode], valids[fold][0])
             if args.mode == 'short_term':
-                same = float(np.sum(valid_predictions == valids[fold][1]))
+                same = float(np.sum(preds == valids[fold][1]))
             else:
-                same = -np.sum((valid_predictions - valids[fold][1])**2)
-            acc  = same/len(valid_predictions)
+                same = -np.sum((preds - valids[fold][1])**2)
+            acc  = same/len(preds)
             valid_acc.append(acc)
-            print "[fold %d] valid acc: %g/%d=%g" % (fold+1, same, len(valid_predictions), acc)
+            print "[fold %d] valid acc: %g/%d=%g" % (fold+1, same, len(preds), acc)
 
         print "avg. train acc. %g" % np.mean(train_acc)
         print "avg. valid acc. %g" % np.mean(valid_acc)
-        test_predictions  = estimator.predict(MODE_TO_FLAGS[args.mode], x_test)
+        preds, confs = estimator.predict(MODE_TO_FLAGS[args.mode], x_test)
         if args.mode == 'short_term':
-            same = float(np.sum(test_predictions == y_test))
+            same = float(np.sum(preds == y_test))
         else:
-            same = -np.sum((test_predictions - y_test)**2)
-        acc = same/len(test_predictions)
-        print "test acc: %g/%d=%g" % (same, len(test_predictions), acc)
+            same = -np.sum((preds - y_test)**2)
+        acc = same/len(preds)
+        print "test acc: %g/%d=%g" % (same, len(preds), acc)
 
     print "done."
 
