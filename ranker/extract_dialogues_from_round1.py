@@ -10,6 +10,11 @@ score_map = {0: 0,
              1: -1,
              2: +1}
 
+
+def is_regular_alphabet(string):
+    return all(ord(c) < 128 for c in string)
+
+
 def valid_chat(turns, k=2):
     # map from user id to the number of message sent
     user_utt = defaultdict(int)
@@ -62,8 +67,8 @@ def reformat(json_data, voted_only=False):
             last_sender_id = None
             added_instances_from_this_chat = False  # True as soon as we add an instance
             for msg in dialog['thread']:
-                # skip empty messages
-                if len(msg['text'].strip().split()) == 0:
+                # skip empty messages or messages written in non-unicode characters
+                if len(msg['text'].strip().split()) == 0 or not is_regular_alphabet(msg['text'].strip().lower()):
                     continue
 
                 # if begining of the converesation, just fill in the context

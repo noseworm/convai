@@ -6,6 +6,11 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from embedding_metrics import w2v
 from embedding_metrics import greedy_score, extrema_score, average_score
 
+import os
+import inspect
+filename = inspect.getframeinfo(inspect.currentframe()).filename
+path = os.path.dirname(os.path.abspath(filename))
+
 import spacy
 import logging
 logger = logging.getLogger(__name__)
@@ -562,7 +567,8 @@ class GenericTurns(Feature):
     def __init__(self, article=None, context=None, candidate=None):
         super(GenericTurns, self).__init__(2, article, context, candidate)
         self.generic_list = []
-        with open('../data/generic_list.txt') as fp:
+        with open('/root/convai/data/generic_list.txt') as fp:
+        # with open('%s/../data/generic_list.txt' % path, 'r') as fp:
             for line in fp:
                 self.generic_list.append(line.strip())
         self.set(article, context, candidate)
@@ -630,7 +636,8 @@ class IntensifierWords(Feature):
     def __init__(self, article=None, context=None, candidate=None):
         super(IntensifierWords, self).__init__(4, article, context, candidate)
         self.intensifier_list = []
-        with open('../data/intensifier_list.txt') as fp:
+        with open('/root/convai/data/intensifier_list.txt') as fp:
+        # with open('%s/../data/intensifier_list.txt' % path, 'r') as fp:
             for line in fp:
                 self.intensifier_list.append(line.strip())
         self.set(article, context, candidate)
@@ -672,7 +679,8 @@ class ConfusionWords(Feature):
     def __init__(self, article=None, context=None, candidate=None):
         super(ConfusionWords, self).__init__(4, article, context, candidate)
         self.confusion_list = []
-        with open('../data/confusion_list.txt') as fp:
+        with open('/root/convai/data/confusion_list.txt') as fp:
+        # with open('%s/../data/confusion_list.txt' % path, 'r') as fp:
             for line in fp:
                 self.confusion_list.append(line.strip())
         self.set(article, context, candidate)
@@ -714,7 +722,8 @@ class ProfanityWords(Feature):
     def __init__(self, article=None, context=None, candidate=None):
         super(ProfanityWords, self).__init__(4, article, context, candidate)
         self.profanity_list = []
-        with open('../data/profanity_list.txt') as fp:
+        with open('/root/convai/data/profanity_list.txt') as fp:
+        # with open('%s/../data/profanity_list.txt' % path, 'r') as fp:
             for line in fp:
                 self.profanity_list.append(line.strip())
         self.set(article, context, candidate)

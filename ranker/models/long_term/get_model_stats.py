@@ -15,15 +15,18 @@ def main(args):
 
         print "max train accuracies: %s" % max_trains
         print "max valid accuracies: %s" % max_valids
-        recent_max_trains = [max(train_accuracies[i]) for i in range(-n_folds, 0)]
-        recent_max_valids = [max(valid_accuracies[i]) for i in range(-n_folds, 0)]
+        recent_max_trains = max_trains[-n_folds:]
+        recent_max_valids = max_valids[-n_folds:]
 
-        print "%s \t avg. train: %g \t avg. valid: %g \t args: %s" % (model_id, np.mean(recent_max_trains), np.mean(recent_max_valids), args[1:])
+        avg_train = np.mean(recent_max_trains)
+        avg_valid = np.mean(recent_max_valids)
 
-        with open('./%svalid%g.txt' % (model_id, np.mean(recent_max_valids)), 'w') as handle:
+        print "%s \t avg. train: %g \t avg. valid: %g \t args: %s" % (model_id, avg_train, avg_valid, args[1:])
+
+        with open('./%svalid%g.txt' % (model_id, avg_valid), 'w') as handle:
             handle.write("model %s\n" % model_id)
-            handle.write("avg. train: %g\n" % np.mean(recent_max_trains))
-            handle.write("avg. valid: %g\n" % np.mean(recent_max_valids))
+            handle.write("avg. train: %g\n" % avg_train)
+            handle.write("avg. valid: %g\n" % avg_valid)
             handle.write("args: %s\n" % args[1:])
             handle.write("features:\n%s\n" % args[0][-1])
             handle.write("-------------\n")

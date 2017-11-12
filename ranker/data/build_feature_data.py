@@ -1,5 +1,4 @@
 import argparse
-import features
 import pyprind
 import json
 import sys
@@ -7,6 +6,8 @@ import os
 
 import inspect
 
+sys.path.insert(1, os.path.join(sys.path[0], '..'))
+import features
 
 def main(args):
     # Get list of feature class names

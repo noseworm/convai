@@ -21,7 +21,8 @@ python train.py ./data/full_data_db_1510012482.99.json ./data/full_data_round1_1
     long_term \
     --gpu 3 \
     --patience 20 \
-    --previous_model ./models/short_term/0.639659/1510335852.62_Estimator_
+    --previous_model ./models/short_term/0.640059/1510403841.53_Estimator_
+    # --previous_model ./models/short_term/0.639659/1510335852.62_Estimator_
     # --previous_model ./models/short_term/0.639792/1510236120.6_Estimator_
     # --previous_model ./models/short_term/0.641391/1510248853.21_Estimator_
 

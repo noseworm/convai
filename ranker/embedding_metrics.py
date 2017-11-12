@@ -3,7 +3,8 @@ import numpy as np
 
 
 print "loading word2vec embeddings..."
-w2v = KeyedVectors.load_word2vec_format("../data/GoogleNews-vectors-negative300.bin", binary=True)
+w2v = KeyedVectors.load_word2vec_format("/root/convai/data/GoogleNews-vectors-negative300.bin", binary=True)
+# w2v = KeyedVectors.load_word2vec_format("/home/ml/nangel3/research/data/embeddings/GoogleNews-vectors-negative300.bin", binary=True)
 
 
 def greedy_score(one, two):
