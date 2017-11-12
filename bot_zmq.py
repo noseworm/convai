@@ -12,7 +12,7 @@ import config
 conf = config.get_config()
 import random
 import emoji
-import storage
+# import storage
 from model_selection_zmq import ModelID
 from Queue import Queue
 from threading import Thread
@@ -130,7 +130,7 @@ class ConvAIRLLBot:
                     'engagement': 5
                 }
                 if chat_id in chat_history:
-                    storage.store_data(chat_id, chat_history[chat_id])
+                    # storage.store_data(chat_id, chat_history[chat_id])
                     del chat_history[chat_id]
                 outgoing_msg_queue.put({'data': data, 'chat_id': chat_id})
                 return
