@@ -14,6 +14,7 @@ import utils
 from hred.dialog_encdec import DialogEncoderDecoder
 from hred.state import prototype_state
 from candidate import CandidateQuestions
+from alicebot.nlg_alicebot import NLGAlice
 import json
 import random
 import requests
@@ -633,4 +634,27 @@ class FactGenerator_Wrapper(Model_Wrapper):
                     context.append(self._format_to_model(fact_text, len(context)))
                     return fact_text, context
 
+
+class AliceBot_Wrapper(Model_Wrapper):
+    def __init__(self, model_prefix, dict_fname,name):
+        super(AliceBot_Wrapper, self).__init__(model_prefix, name)
+        self.aliceBot = NLGAlice() 
+
+    def get_response(self, user_id='', text='', context=None, **kwargs):
+        ctext = self._format_to_model(text, len(context))
+        context.append(ctext)
+        # strip context of special tokens
+        clean_context = []
+        if context and len(context) > 0:
+            for cont in context:
+                cln = re.sub("[\(\[\<].*?[\)\]\>]", "", cont)
+                clean_context.append(cln)
+        print clean_context
+        response = ''
+        try:
+            response = self.aliceBot.compute_responses(clean_context, None)
+        except Exception as e:
+            logging.error("Error generating alicebot response")
+        context.append(self._format_to_model(response, len(context)))
+        return response, context
 
