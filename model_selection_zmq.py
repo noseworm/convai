@@ -10,6 +10,7 @@ import numpy as np
 import emoji
 import json
 import cPickle as pkl
+from datetime import datetime
 from ranker import features
 from ranker.estimators import Estimator, LONG_TERM_MODE, SHORT_TERM_MODE
 from Queue import Queue
@@ -96,7 +97,12 @@ BORED_COUNT = 2
 # Instead of the previous architecture, now we would like to respond faster.
 # So the focus is that even if some models are taking a lot of time,
 # do not wait for them!
-WAIT_TIME = 10
+WAIT_TIME = 5
+
+# PINGBACK
+# Check every time if the time now - time last pinged back of a model
+# is within PING_TIME. If not, revive
+PING_TIME = 15
 
 # IPC pipes
 # Parent to models
@@ -314,6 +320,7 @@ class ModelClient():
                     logging.info("Received exit signal, model {}"
                                  .format(self.model_name))
                     self.is_running = False
+
             else:
                 # assumes the msg will contain keyword parameters
                 if 'chat_id' in msg:
@@ -353,7 +360,7 @@ class ModelClient():
                         score = pred[0] # 1.0 < end-of-chat score < 5.0
                     else:
                         vote = -1
-                        conf = -1
+                        conf = 0
                         score = -1
 
                     resp_msg = {'text': response, 'context': context,
@@ -380,7 +387,9 @@ class ModelClient():
             act_thread.daemon = True
             act_thread.start()
             while self.is_running:
-                time.sleep(1)
+                # Ping back to let parent know its alive
+                self.queue.put({'control':'ack', 'model_name': self.model_name})
+                time.sleep(10)
             logging.info("Exiting {} client".format(self.model_name))
         except (KeyboardInterrupt, SystemExit):
             logging.info("Cleaning tf variables")
@@ -408,8 +417,11 @@ used_models = {}      # This dictionary should contain an array per chat_id on t
 # Debugging
 modelIds = [ModelID.ECHO, ModelID.CAND_QA, ModelID.HRED_TWITTER, ModelID.HRED_REDDIT,
         ModelID.FOLLOWUP_QA, ModelID.DUMB_QA, ModelID.DRQA, ModelID.NQG,
-        ModelID.TOPIC, ModelID.FACT_GEN, ModelID.ALICEBOT]
+        ModelID.TOPIC, ModelID.FACT_GEN, ModelID.ALICEBOT, ModelID.DUAL_ENCODER]
 # modelIds = [ModelID.TOPIC]
+
+# last ack time, contains datetimes
+ack_times = {model:None for model in modelIds}
 
 # initialize only these models to catch the patterns
 # TODO: or probably a pattern catcher?
@@ -470,7 +482,10 @@ def act():
     logging.info("Child pull channel active")
     while True:
         packet = socket.recv_json()
-        if packet['chat_unique_id'] in model_responses:
+        if 'control' in packet:
+            # received ack response
+            ack_times[packet['model_name']] = datetime.now()
+        elif packet['chat_unique_id'] in model_responses:
             # calculate the features here
             chat_id = packet['chat_id']
             context = packet['context']
@@ -541,6 +556,25 @@ def clean(chat_id):
     boring_count.pop(chat_id, None)
     policy_mode = Policy.NONE
 
+# check the last ack time to determine if the model is dead
+def dead_models():
+    dm = []
+    now = datetime.now()
+    for model in ack_times:
+        if ack_times[model]:
+            diff = now - ack_times[model]
+            diff_seconds = diff.total_seconds()
+            if diff_seconds > PING_TIME:
+                dm.append(model)
+    return dm
+
+# check if all models are up
+def isEveryoneAwake():
+    for model in ack_times:
+        if not ack_times[model]:
+            return False
+    return True
+
 
 def strip_emojis(str):
     tokens = set(list(str))
@@ -565,12 +599,12 @@ def ranker(chat_unique_id):
         conf = float(response['conf'])
         vote = float(response['vote'])
         score = float(response['score'])
-        logging.info("{} - {}".format(model, conf))
+        logging.info("{} - {} - {}".format(model, conf, score))
         if conf > 0.75:
             rank_score = conf * score
             if model != ModelID.NQG:
                 consider_models.append((model, rank_score))
-        if conf < 0.25 and conf != -1:
+        if conf < 0.25 and conf != 0:
             rank_score = conf * score
             if model != ModelID.ECHO: # keep echo model for failure handling case
                 dont_consider_models.append((model, rank_score))
@@ -695,12 +729,12 @@ def get_response(chat_id, text, context, allowed_model=None):
             # if allowed model is not all, then wait for it to arrive
             # by elongating the wait_for time (useful for debugging certain
             # models)
+            # Only for debugging
             if allowed_model and allowed_model != ModelID.ALL:
                 if allowed_model in model_responses[chat_unique_id]:
                     done_processing = True
                     break
-                else:
-                    wait_for += 1
+            # Wait for all the models to arrive - REDUNDANT
             elif len(set(model_responses[chat_unique_id].keys())
                     .intersection(set(modelIds))) == len(modelIds):
                 done_processing = True
@@ -714,9 +748,10 @@ def get_response(chat_id, text, context, allowed_model=None):
         # TODO: replace this with a proper choice / always NQG?
         choices = list(set([ModelID.CAND_QA, ModelID.NQG])
                 .intersection(set(model_responses[chat_unique_id].keys())))
-        selection = random.choice(choices)
-        response = model_responses[chat_unique_id][selection]
-        response['policyID'] = Policy.START
+        if len(choices) > 0:
+            selection = random.choice(choices)
+            response = model_responses[chat_unique_id][selection]
+            response['policyID'] = Policy.START
     else:
         # check if allowed_model is set, then only reply from the allowed
         # model. This is done for debugging.
@@ -787,7 +822,7 @@ def get_response(chat_id, text, context, allowed_model=None):
             # (only if that question is not asked before)
             boring_avl = list(set(model_responses[chat_unique_id])
                     .intersection(set([ModelID.NQG, ModelID.FACT_GEN])))
-            if boring_count[chat_id] >= BORED_COUNT and len(boring_avl):
+            if boring_count[chat_id] >= BORED_COUNT and len(boring_avl) > 0:
                 selection = random.choice(boring_avl)
                 response = model_responses[chat_unique_id][selection]
                 response['policyID'] = Policy.BORED
@@ -815,12 +850,14 @@ def get_response(chat_id, text, context, allowed_model=None):
 
                 available_models = list(set(model_responses[chat_unique_id]).intersection(models))
                 if len(available_models) > 0:
-                    chosen_model = random.choice(available_models)
-                    response = model_responses[chat_unique_id][chosen_model]
+                    # TODO: assign model selection probability based on estimator confidence
+                    confs = [float(model_responses[chat_unique_id][model]['conf']) for model in available_models]
+                    norm_confs = confs / np.sum(confs)
+                    chosen_model = np.random.choice(available_models, 1, p=norm_confs)
+                    response = model_responses[chat_unique_id][chosen_model[0]]
+                    response['policyID'] = Policy.OPTIMAL
 
-                response['policyID'] = Policy.OPTIMAL
-
-    # if still no response, then just send a random emoji
+    # if still no response, then just send a random fact
     if not response or 'text' not in response:
         logging.warn("Failure to obtain a response, using fact gen")
         response = model_responses[chat_unique_id][ModelID.FACT_GEN]
@@ -875,7 +912,29 @@ if __name__ == '__main__':
     # Model Init
     start_models()
 
+    all_awake = False
+
     try:
+        while True:
+            time.sleep(1)
+            dm = dead_models()
+            if not all_awake and isEveryoneAwake():
+                logging.info("====================================")
+                logging.info("======RLLCHatBot Active=============")
+                logging.info("All modules of the bot has been loaded.")
+                logging.info("Thanks for your patience")
+                logging.info("-------------------------------------")
+                logging.info("Made with <3 in Montreal")
+                logging.info("Reasoning & Learning Lab, McGill University")
+                logging.info("Fall 2017")
+                logging.info("=====================================")
+                all_awake = True
+
+            if len(dm) > 0:
+                for dead_m in dm:
+                    logging.info("Reviving model {}".format(dead_m))
+                    mp_pool.apply_async(ModelClient, args=(dead_m,))
+        # doesn't matter to wait for join now?
         mp_pool.close()
         mp_pool.join()
         #for mp in mps:
