@@ -6,7 +6,6 @@ import copy
 import spacy
 import re
 import time
-import tensorflow as tf
 import numpy as np
 import emoji
 import json
@@ -17,8 +16,9 @@ from Queue import Queue
 from threading import Thread
 from multiprocessing import Process, Pool
 import uuid
-from models.wrapper import HRED_Wrapper, Dual_Encoder_Wrapper, HREDQA_Wrapper, CandidateQuestions_Wrapper, DumbQuestions_Wrapper, DRQA_Wrapper, NQG_Wrapper, Echo_Wrapper, Topic_Wrapper
+from models.wrapper import HRED_Wrapper, Dual_Encoder_Wrapper, HREDQA_Wrapper,CandidateQuestions_Wrapper, DumbQuestions_Wrapper, DRQA_Wrapper, NQG_Wrapper,Echo_Wrapper, Topic_Wrapper, FactGenerator_Wrapper, AliceBot_Wrapper
 import logging
+from nltk.tokenize import word_tokenize
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(name)s.%(funcName)s +%(lineno)s: %(levelname)-8s [%(process)d] %(message)s',
@@ -67,6 +67,8 @@ class Policy:
     DE_DRQA = 6      # DualEncoder:0.5 & DrQA:0.5
     START = 7
     FIXED = 8        # when allowed_model = True
+    LEARNED = 9      # Learned policy ranker
+    BORED = 10
 
 
 class ModelID:
@@ -79,6 +81,8 @@ class ModelID:
     FOLLOWUP_QA = 'followup_qa'
     CAND_QA = 'candidate_question'
     TOPIC = 'topic_model'
+    FACT_GEN = 'fact_gen'
+    ALICEBOT = 'alicebot'
     ECHO = 'echo_model'  # just for debugging purposes
     ALL = 'all'          # stub to represent all allowable models
 
@@ -104,6 +108,49 @@ PARENT_PIPE = 'ipc:///tmp/parent_push.pipe'
 # bot to parent caller
 PARENT_PULL_PIPE = 'ipc:///tmp/parent_pull.pipe'
 
+###
+# Load ranker models
+###
+
+# short term estimator
+ranker_args_short = []
+with open(conf.ranker['model_short'],'rb') as fp:
+    data_short, hidden_dims_short, hidden_dims_extra_short, activation_short, \
+      optimizer_short, learning_rate_short, \
+      model_path_short, model_id_short, model_name_short, _, _, _ \
+    = pkl.load(fp)
+# load the feature list used in short term ranker
+feature_list_short = data_short[-1]
+# reconstruct model_path just in case file have been moved:
+model_path_short = conf.ranker['model_short'].split(model_id_short)[0]
+if model_path_short.endswith('/'):
+    model_path_short = model_path_short[:-1]  # ignore the last '/'
+logging.info(model_path_short)
+
+# long term estimator
+ranker_args_long = []
+with open(conf.ranker['model_long'], 'rb') as fp:
+    data_long, hidden_dims_long, hidden_dims_extra_long, activation_long, \
+      optimizer_long, learning_rate_long, \
+      model_path_long, model_id_long, model_name_long, _, _, _ \
+    = pkl.load(fp)
+# load the feature list user in short term ranker
+feature_list_long = data_long[-1]
+# reconstruct model_path just in case file have been moved:
+model_path_long = conf.ranker['model_long'].split(model_id_long)[0]
+if model_path_long.endswith('/'):
+    model_path_long = model_path_long[:-1]  # ignore the last '/'
+logging.info(model_path_long)
+
+assert feature_list_short == feature_list_long
+# NOTE: could also check equality between the following variables, but its redundant:
+# - hidden_dims_short       & hidden_dims_long
+# - hidden_dims_extra_short & hidden_dims_extra_long
+# - activation_short        & activation_long
+# - optimizer_short         & optimizer_long
+# - learning_rate_short     & learning_rate_long
+
+
 
 class ModelClient():
     """
@@ -111,56 +158,115 @@ class ModelClient():
     and subscribe to channel to listen for updates
     """
 
-    def __init__(self, model_name):
+    def __init__(self, model_name, estimate=True):
         #Process.__init__(self)
         self.model_name = model_name
+        self.estimate = estimate
         # select and initialize models
         if model_name == ModelID.HRED_REDDIT:
             logging.info("Initializing HRED Reddit")
             self.model = HRED_Wrapper(conf.hred['reddit_model_prefix'],
                                       conf.hred['reddit_dict_file'],
                                       ModelID.HRED_REDDIT)
+            self.estimate = True
         if model_name == ModelID.HRED_TWITTER:
             logging.info("Initializing HRED Twitter")
             self.model = HRED_Wrapper(conf.hred['twitter_model_prefix'],
                                       conf.hred['twitter_dict_file'],
                                       ModelID.HRED_TWITTER)
+            self.estimate = True
         if model_name == ModelID.FOLLOWUP_QA:
             logging.info("Initializing HRED Followup")
             self.model = HREDQA_Wrapper(conf.followup['model_prefix'],
                                         conf.followup['dict_file'],
                                         ModelID.FOLLOWUP_QA)
+            self.estimate = True
         if model_name == ModelID.DUAL_ENCODER:
             logging.info("Initializing Dual Encoder")
             self.model = Dual_Encoder_Wrapper(conf.de['reddit_model_prefix'],
                                               conf.de['reddit_data_file'],
                                               conf.de['reddit_dict_file'],
                                               ModelID.DUAL_ENCODER)
+            self.estimate = True
         if model_name == ModelID.DRQA:
             logging.info("Initializing DRQA")
             self.model = DRQA_Wrapper('', '', ModelID.DRQA)
+            self.estimate = False
         if model_name == ModelID.DUMB_QA:
             logging.info("Initializing DUMB QA")
             self.model = DumbQuestions_Wrapper(
                 '', conf.dumb['dict_file'], ModelID.DUMB_QA)
+            self.estimate = True
         if model_name == ModelID.NQG:
             logging.info("Initializing NQG")
             self.model = NQG_Wrapper('', '', ModelID.NQG)
+            self.estimate = True
         if model_name == ModelID.ECHO:
             logging.info("Initializing Echo")
             self.model = Echo_Wrapper('', '', ModelID.ECHO)
+            self.estimate = False
         if model_name == ModelID.CAND_QA:
             logging.info("Initializing Candidate Questions")
             self.model = CandidateQuestions_Wrapper('',
                                                     conf.candidate['dict_file'],
                                                     ModelID.CAND_QA)
+            self.estimate = False
         if model_name == ModelID.TOPIC:
             logging.info("Initializing topic model")
             self.model = Topic_Wrapper('', '', '',conf.topic['dir_name'],
                     conf.topic['model_name'], conf.topic['top_k'])
+            self.estimate = False
+        if model_name == ModelID.FACT_GEN:
+            logging.info("Initializing fact generator")
+            self.model = FactGenerator_Wrapper('','','')
+            self.estimate = False
+        if model_name == ModelID.ALICEBOT:
+            logging.info("Initializing Alicebot")
+            self.model = AliceBot_Wrapper('','','')
+            self.estimate = True
         # message queue. This contains the responses generated by the model
         self.queue = Queue()
         self.is_running = True
+        import tensorflow as tf
+        logging.info("Building NN Ranker")
+        ###
+        # Build NN ranker models and set their parameters
+        ###
+        # NOTE: stupid theano can't load two graph within the same session -_-
+        # SOLUTION: taken from https://stackoverflow.com/a/41646443
+        self.model_graph_short = tf.Graph()
+        with self.model_graph_short.as_default():
+            self.estimator_short = Estimator(
+                data_short, hidden_dims_short, hidden_dims_extra_short, activation_short,
+                optimizer_short, learning_rate_short,
+                model_path_short, model_id_short, model_name_short
+            )
+        self.model_graph_long = tf.Graph()
+        with self.model_graph_long.as_default():
+            self.estimator_long = Estimator(
+                data_long, hidden_dims_long, hidden_dims_extra_long, activation_long,
+                optimizer_long, learning_rate_long,
+                model_path_long, model_id_long, model_name_long
+            )
+        logging.info("Init session")
+        # Wrap ANY call to the rankers within those two sessions:
+        self.sess_short = tf.Session(graph=self.model_graph_short)
+        self.sess_long  = tf.Session(graph=self.model_graph_long)
+        logging.info("Done init session")
+        # example: reload trained parameters
+        logging.info("Loading trained params short")
+        with self.sess_short.as_default():
+            with self.model_graph_short.as_default():
+                self.estimator_short.load(self.sess_short, model_path_short, model_id_short, model_name_short)
+        logging.info("Loading trained params long")
+        with self.sess_long.as_default():
+            with self.model_graph_long.as_default():
+                self.estimator_long.load(self.sess_long, model_path_long, model_id_long, model_name_long)
+        # TODO: close the two sessions when not needed anymore! ie: at the of each chat
+
+        logging.info("Done building NN")
+
+
         self.warmup()
         self.run()
 
@@ -215,10 +321,48 @@ class ModelClient():
                 response, context = self.model.get_response(**msg)
                 ## if blank response, do not push it in the channel
                 if len(response) > 0:
+                    if len(context) > 0 and self.estimate:
+                        ## calculate NN estimation
+                        logging.info("Start feature calculation for model {}".format(self.model_name))
+                        feat = features.get(
+                            msg['article_text'], msg['all_context'] + [context[-1]],
+                            response, feature_list_short)
+                        # recall: `feature_list_short` & `feature_list_long` are the same
+                        logging.info("Done feature calculation for model {}".format(self.model_name))
+                        # Run approximator and save the score in packet
+                        logging.info("Scoring the candidate response for model {}".format(self.model_name))
+                        # Get the input vector to the estimators from the feature instances lise:
+                        candidate_vector = np.concatenate([feat[idx].feat for idx in range(len(feature_list_short))])
+                        input_dim = len(candidate_vector)
+                        candidate_vector = candidate_vector.reshape(1, input_dim) # make an array of shape (1, input)
+                        # Get predictions for this candidate response:
+                        with self.sess_short.as_default():
+                            with self.model_graph_short.as_default():
+                                logging.info("estimator short predicting")
+                                # get predicted class (0: downvote, 1: upvote), and confidence (ie: proba of upvote)
+                                vote, conf = self.estimator_short.predict(SHORT_TERM_MODE, candidate_vector)
+                                assert len(vote) == len(conf) == 1  # sanity check with batch size of 1
+                        with self.sess_long.as_default():
+                            with self.model_graph_long.as_default():
+                                logging.info("estimator long prediction")
+                                # get the predicted end-of-dialogue score:
+                                pred, _ = self.estimator_long.predict(LONG_TERM_MODE, candidate_vector)
+                                assert len(pred) == 1  # sanity check with batch size of 1
+                        vote = vote[0]  # 0 = downvote ; 1 = upvote
+                        conf = conf[0]  # 0.0 < Pr(upvote) < 1.0
+                        score = pred[0] # 1.0 < end-of-chat score < 5.0
+                    else:
+                        vote = -1
+                        conf = -1
+                        score = -1
+
                     resp_msg = {'text': response, 'context': context,
                                 'model_name': self.model_name,
                                 'chat_id': msg['chat_id'],
-                                'chat_unique_id': msg['chat_unique_id']}
+                                'chat_unique_id': msg['chat_unique_id'],
+                                'vote': str(vote),
+                                'conf': str(conf),
+                                'score': str(score)}
                     self.queue.put(resp_msg)
 
     def run(self):
@@ -239,6 +383,9 @@ class ModelClient():
                 time.sleep(1)
             logging.info("Exiting {} client".format(self.model_name))
         except (KeyboardInterrupt, SystemExit):
+            logging.info("Cleaning tf variables")
+            self.sess_short.close()
+            self.sess_long.close()
             logging.info("Shutting down {} client".format(self.model_name))
 
 
@@ -253,90 +400,21 @@ policy_mode = Policy.NONE
 job_queue = Queue()
 response_queue = Queue()
 model_responses = {}
+used_models = {}      # This dictionary should contain an array per chat_id on the history of used models
 # self.models = [self.hred_twitter, self.hred_reddit,
 #               self.dual_enc, self.qa_hred, self.dumb_qa, self.drqa]
 # modelIds = [ModelID.HRED_TWITTER, ModelID.HRED_REDDIT, ModelID.DUAL_ENCODER,
 #                 ModelID.FOLLOWUP_QA, ModelID.DUMB_QA, ModelID.DRQA]
 # Debugging
-modelIds = [ModelID.ECHO, ModelID.CAND_QA, ModelID.HRED_TWITTER,
-        ModelID.FOLLOWUP_QA, ModelID.DUMB_QA, ModelID.DRQA, ModelID.NQG, ModelID.TOPIC]
+modelIds = [ModelID.ECHO, ModelID.CAND_QA, ModelID.HRED_TWITTER, ModelID.HRED_REDDIT,
+        ModelID.FOLLOWUP_QA, ModelID.DUMB_QA, ModelID.DRQA, ModelID.NQG,
+        ModelID.TOPIC, ModelID.FACT_GEN, ModelID.ALICEBOT]
 # modelIds = [ModelID.TOPIC]
 
 # initialize only these models to catch the patterns
 # TODO: or probably a pattern catcher?
 dumb_qa_model = DumbQuestions_Wrapper(
     '', conf.dumb['dict_file'], ModelID.DUMB_QA)
-
-###
-# Load ranker models
-###
-
-# short term estimator
-ranker_args_short = []
-with open(conf.ranker['model_short'],'rb') as fp:
-    data_short, hidden_dims_short, hidden_dims_extra_short, activation_short, \
-      optimizer_short, learning_rate_short, \
-      model_path_short, model_id_short, model_name_short, _, _, _ \
-    = pkl.load(fp)
-# load the feature list used in short term ranker
-feature_list_short = data_short[-1]
-# reconstruct model_path just in case file have been moved:
-model_path_short = conf.ranker['model_short'].split(model_id_short)[0]
-if model_path_short.endswith('/'):
-    model_path_short = model_path_short[:-1]  # ignore the last '/'
-
-# long term estimator
-ranker_args_long = []
-with open(conf.ranker['model_long'], 'rb') as fp:
-    data_long, hidden_dims_long, hidden_dims_extra_long, activation_long, \
-      optimizer_long, learning_rate_long, \
-      model_path_long, model_id_long, model_name_long, _, _, _ \
-    = pkl.load(fp)
-# load the feature list user in short term ranker
-feature_list_long = data[-1]
-# reconstruct model_path just in case file have been moved:
-model_path_long = conf.ranker['model_long'].split(model_id_long)[0]
-if model_path_long.endswith('/'):
-    model_path_long = model_path_long[:-1]  # ignore the last '/'
-
-assert feature_list_short == feature_list_long
-# NOTE: could also check equality between the following variables, but its redundant:
-# - hidden_dims_short       & hidden_dims_long
-# - hidden_dims_extra_short & hidden_dims_extra_long
-# - activation_short        & activation_long
-# - optimizer_short         & optimizer_long
-# - learning_rate_short     & learning_rate_long
-
-###
-# Build ranker models and set their parameters
-###
-# NOTE: stupid theano can't load two graph within the same session -_-
-# SOLUTION: taken from https://stackoverflow.com/a/41646443
-model_graph_short = tf.Graph()
-with model_graph_short.as_default():
-    estimator_short = Estimator(
-        data_short, hidden_dims_short, hidden_dims_extra_short, activation_short,
-        optimizer_short, learning_rate_short,
-        model_path_short, model_id_short, model_name_short
-    )
-model_graph_long = tf.Graph()
-with model_graph_long.as_default():
-    estimator_long = Estimator(
-        data_long, hidden_dims_long, hidden_dims_extra_long, activation_long,
-        optimizer_long, learning_rate_long,
-        model_path_long, model_id_long, model_name_long
-    )
-# Wrap ANY call to the rankers within those two sessions:
-sess_short = tf.Session(graph=model_graph_short)
-sess_long  = tf.Session(graph=model_graph_long)
-# example: reload trained parameters
-with sess_short.as_default():
-    with model_graph_short.as_default():
-        estimator_short.load(sess_short, model_path_short, model_id_short, model_name_short)
-with sess_long.as_default():
-    with model_graph_long.as_default():
-        estimator_long.load(sess_long, model_path_long, model_id_short, model_name_short)
-# TODO: close the two sessions when not needed anymore! ie: at the of each chat
 
 
 def start_models():
@@ -358,7 +436,7 @@ def stop_models():
 
 def submit_job(job_type='preprocess', to_model=ModelID.ALL,
                context=None, text='', chat_id='', chat_unique_id='',
-               article=''):
+               article='',all_context=None):
     """ Submit Jobs to job queue, which will be consumed by the responder
     :job_type = preprocess / get_response / exit
     :to_model = all / specific model name
@@ -373,7 +451,7 @@ def submit_job(job_type='preprocess', to_model=ModelID.ALL,
         context = []
     job = {'type': job_type, 'topic': topic, 'context': context,
             'text': text, 'chat_id': chat_id, 'chat_unique_id': chat_unique_id,
-            'article_text': article}
+            'article_text': article,'all_context': all_context}
     if job_type == 'preprocess' or job_type == 'exit':
         job['control'] = job_type
 
@@ -399,31 +477,6 @@ def act():
             logging.info("Calculating features for model {}".format(packet['model_name']))
             # Context history is in chat_history[<chat_id>]
             context_till_now = chat_history[chat_id] + [context[-1]]
-            packet['features'] = features.get(
-                    article_text[chat_id], context_till_now,
-                    packet['text'],
-                    feature_list_short)  # recall: `feature_list_short` & `feature_list_long` are the same
-            logging.info("Done feature calculation for model {}".format(packet['model_name']))
-            # Run approximator and save the score in packet
-            logging.info("Scoring the candidate response for model {}".format(packet['model_name']))
-            # Get the input vector to the estimators from the feature instances lise:
-            candidate_vector = np.concatenate([packet['features'][idx].feat for idx in range(len(feature_list_short))])
-            input_dim = len(candidate_vector)
-            candidate_vector = candidate_vector.reshape(1, input_dim) # make an array of shape (1, input)
-            # Get predictions for this candidate response:
-            with sess_short.as_default():
-                with model_graph_short.as_default():
-                    # get predicted class (0: downvote, 1: upvote), and confidence (ie: proba of upvote)
-                    vote, conf = estimator_short.predict(SHORT_TERM_MODE, candidate_vector)
-                    assert len(vote) == len(conf) == 1  # sanity check with batch size of 1
-            with sess_long.as_default():
-                with model_graph_long.as_default():
-                    # get the predicted end-of-dialogue score:
-                    pred, _ = estimator_long.predict(LONG_TERM_MODE, candidate_vector)
-                    assert len(pred) == 1  # sanity check with batch size of 1
-            packet['vote'] = vote[0]  # 0 = downvote ; 1 = upvote
-            packet['conf'] = conf[0]  # 0.0 < Pr(upvote) < 1.0
-            packet['score'] = pred[0] # 1.0 < end-of-chat score < 5.0
             # Now store the packet in dict
             model_responses[packet['chat_unique_id']
                             ][packet['model_name']] = packet
@@ -498,7 +551,41 @@ def strip_emojis(str):
         return text, emojis
     return str, None
 
-# TODO: set allowed_model for model based debugging
+# given a set of model_responses, rank the best one based on
+# the following policy:
+# return ModelID of the model to select, else None
+# also return a list of models to NOT consider, else None
+# which indicates to take the pre-calculated policy
+def ranker(chat_unique_id):
+    consider_models = [] # array containing tuple of (model_name, rank_score) for 1
+    dont_consider_models = [] # for 0
+    all_models = [] # for debugging purpose
+    logging.info("Ranking among models")
+    for model, response in model_responses[chat_unique_id].iteritems():
+        conf = float(response['conf'])
+        vote = float(response['vote'])
+        score = float(response['score'])
+        logging.info("{} - {}".format(model, conf))
+        if conf > 0.75:
+            rank_score = conf * score
+            if model != ModelID.NQG:
+                consider_models.append((model, rank_score))
+        if conf < 0.25 and conf != -1:
+            rank_score = conf * score
+            if model != ModelID.ECHO: # keep echo model for failure handling case
+                dont_consider_models.append((model, rank_score))
+        all_models.append((model, conf * score))
+    all_models = sorted(all_models, key=lambda x:x[1], reverse=True)
+    logging.info(all_models)
+    consider = None
+    dont_consider = None
+    if len(consider_models) > 0:
+        consider_models = sorted(consider_models, key=lambda x:x[1], reverse=True)
+        consider = consider_models[0][0]
+    elif len(dont_consider_models) > 0:
+        dont_consider = dont_consider_models
+    return consider, dont_consider
+
 
 
 def get_response(chat_id, text, context, allowed_model=None):
@@ -531,6 +618,9 @@ def get_response(chat_id, text, context, allowed_model=None):
         # initialize chat history
         chat_history[chat_id] = []
 
+        # initialize model usage history
+        used_models[chat_id] = []
+
         # fire global preprocess call
         submit_job(job_type='preprocess',
                    article=article_text[chat_id],
@@ -542,13 +632,17 @@ def get_response(chat_id, text, context, allowed_model=None):
                    chat_id=chat_id,
                    chat_unique_id=chat_unique_id,
                    context=context,
-                   text='')
+                   text='',
+                   article=article_text[chat_id],
+                   all_context=chat_history[chat_id])
         submit_job(job_type='get_response',
                    to_model=ModelID.NQG,
                    chat_id=chat_id,
                    chat_unique_id=chat_unique_id,
                    context=context,
-                   text='')
+                   text='',
+                   article=article_text[chat_id],
+                   all_context=chat_history[chat_id])
 
     else:
         # fire global query
@@ -557,14 +651,18 @@ def get_response(chat_id, text, context, allowed_model=None):
                        chat_id=chat_id,
                        chat_unique_id=chat_unique_id,
                        context=context,
-                       text=text)
+                       text=text,
+                       article=article_text[chat_id],
+                       all_context=chat_history[chat_id])
         else:
             submit_job(job_type='get_response',
                        to_model=allowed_model,
                        chat_id=chat_id,
                        chat_unique_id=chat_unique_id,
                        context=context,
-                       text=text)
+                       text=text,
+                       article=article_text[chat_id],
+                       all_context=chat_history[chat_id])
     # wait for responses to come in
     # if we have answer ready before the wait period, exit and return the answer
     done_processing = False
@@ -611,7 +709,6 @@ def get_response(chat_id, text, context, allowed_model=None):
         response = model_responses[chat_unique_id][selection]
         response['policyID'] = Policy.START
     else:
-        # TODO: Replace this with ranking. Now using the optimal policy
         # check if allowed_model is set, then only reply from the allowed
         # model. This is done for debugging.
         # TODO: Probably remove this before final submission?
@@ -621,6 +718,13 @@ def get_response(chat_id, text, context, allowed_model=None):
         else:
             # if text contains emoji's, strip them
             text, emojis = strip_emojis(text)
+            # check if the text contains wh words
+            nt_words = word_tokenize(text.lower())
+            has_wh_word = False
+            for word in nt_words:
+                if word in set(conf.wh_words):
+                    has_wh_word = True
+                    break
             if emojis and len(text.strip()) < 1:
                 # if text had only emoji, give back the emoji itself
                 # NOTE: shouldn't we append the `resp` (in this case emoji)
@@ -639,50 +743,73 @@ def get_response(chat_id, text, context, allowed_model=None):
                 response = model_responses[
                     chat_unique_id][ModelID.TOPIC]
                 response['policyID'] = Policy.FIXED
-            elif '?' in text:
+            elif has_wh_word:
                 # get list of common nouns between article and question
                 common = list(set(article_nouns[chat_id]).intersection(
                     set(text.split(' '))))
-                print 'common nouns between question and article:', common
+                logging.info('Common nouns between question and article: {}'.format(common))
                 # if there is a common noun between question and article
                 # select DrQA
-                if len(common) > 0 and ModelID.DRQA in model_responses:
+                if len(common) > 0 and ModelID.DRQA in model_responses[chat_unique_id]:
                     response = model_responses[
                         chat_unique_id][ModelID.DRQA]
                     response['policyID'] = Policy.FIXED
 
     if not response:
-        # if text contains 2 words or less, add 1 to the bored count
-        if len(text.strip().split()) <= 2:
-            boring_count[chat_id] += 1
-        # if user is bored, change the topic by asking a question
-        # (only if that question is not asked before)
-        if boring_count[chat_id] >= BORED_COUNT:
-            response = model_responses[
-                chat_unique_id][ModelID.CAND_QA]
-            boring_count[chat_id] = 0  # reset bored count to 0
+        # Ranker based selection
+        best_model, dont_consider = ranker(chat_unique_id)
+        if dont_consider and len(dont_consider) > 0:
+            for model,score in dont_consider:
+                del model_responses[chat_unique_id][model] # remove the models from futher consideration
 
-        # randomly decide a model to query to get a response:
-        models = [ModelID.HRED_REDDIT, ModelID.HRED_TWITTER,
-                  ModelID.DUAL_ENCODER, ModelID.NQG]
-        if '?' in text:
-            # if the user asked a question, also consider DrQA
-            models.append(ModelID.DRQA)
+        if best_model:
+            response = model_responses[chat_unique_id][best_model]
+            response['policyID'] = Policy.LEARNED
         else:
-            # if the user didn't ask a question, also consider hred-qa
-            models.append(ModelID.FOLLOWUP_QA)
+            # fallback to optimal policy
+            # if text contains 2 words or less, add 1 to the bored count
+            if len(text.strip().split()) <= 2:
+                boring_count[chat_id] += 1
+            # if user is bored, change the topic by asking a question
+            # (only if that question is not asked before)
+            boring_avl = list(set(model_responses[chat_unique_id])
+                    .intersection(set([ModelID.NQG, ModelID.FACT_GEN])))
+            if boring_count[chat_id] >= BORED_COUNT and len(boring_avl):
+                selection = random.choice(boring_avl)
+                response = model_responses[chat_unique_id][selection]
+                response['policyID'] = Policy.BORED
+                boring_count[chat_id] = 0  # reset bored count to 0
+            else:
+                # TODO: have choice of probability. Given the past model usage,
+                # if HRED_TWITTER or HRED_REDDIT is used, then decay the
+                # probability by small amount
+                # randomly decide a model to query to get a response:
+                models = [ModelID.HRED_REDDIT, ModelID.HRED_TWITTER,
+                          ModelID.DUAL_ENCODER, ModelID.ALICEBOT]
+                nt_words = word_tokenize(text.lower())
+                has_wh_word = False
+                for word in nt_words:
+                    if word in set(conf.wh_words):
+                        has_wh_word = True
+                        break
+                if has_wh_word:
+                    # if the user asked a question, also consider DrQA
+                    models.append(ModelID.DRQA)
+                else:
+                    # if the user didn't ask a question, also consider hred-qa
+                    models.append(ModelID.FOLLOWUP_QA)
 
-        available_models = list(set(model_responses[chat_unique_id]).intersection(models))
-        if len(available_models) > 0:
-            chosen_model = random.choice(available_models)
-            response = model_responses[chat_unique_id][chosen_model]
+                available_models = list(set(model_responses[chat_unique_id]).intersection(models))
+                if len(available_models) > 0:
+                    chosen_model = random.choice(available_models)
+                    response = model_responses[chat_unique_id][chosen_model]
 
-        response['policyID'] = Policy.OPTIMAL
+                response['policyID'] = Policy.OPTIMAL
 
     # if still no response, then just send a random emoji
     if not response or 'text' not in response:
-        logging.warn("Failure to obtain a response, using echo model")
-        response = model_responses[chat_unique_id][ModelID.ECHO]
+        logging.warn("Failure to obtain a response, using fact gen")
+        response = model_responses[chat_unique_id][ModelID.FACT_GEN]
         response['policyID'] = Policy.FIXED
 
 
@@ -690,8 +817,7 @@ def get_response(chat_id, text, context, allowed_model=None):
     # add user and response pair in chat_history
     chat_history[response['chat_id']].append(response['context'][-1])
     chat_history[response['chat_id']].append(response['text'])
-    # remove the features because it is not JSON serializable
-    del response['features']
+    used_models[chat_id].append(response['model_name'])
     # Again use ZMQ, because lulz
     response_queue.put(response)
     # clean the unique chat ID

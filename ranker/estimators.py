@@ -282,7 +282,7 @@ class Estimator(object):
         return preds, confs
 
     def save(self, session, save_model=True, save_args=True, save_timings=True):
-        prefix = "./%s/%s_%s" % (self.model_path, self.model_id, self.model_name)
+        prefix = "%s/%s_%s" % (self.model_path, self.model_id, self.model_name)
         # save the tensorflow graph variables
         if save_model:
             saved_path = self.saver.save(session, "%s_model.ckpt" % prefix)
@@ -323,7 +323,7 @@ class Estimator(object):
             model_path = self.model_path
             model_id   = self.model_id
             model_name = self.model_name
-        self.saver.restore(session, "./%s/%s_%s_model.ckpt" % (model_path, model_id, model_name))
+        self.saver.restore(session, "%s/%s_%s_model.ckpt" % (model_path, model_id, model_name))
         print "Model restored to %s/%s_%s" % (model_path, model_id, model_name)
 
 

@@ -1,5 +1,4 @@
-# should contain wrapper classes
-
+import zmq
 import cPickle
 import logging
 import numpy as np
@@ -15,12 +14,19 @@ import utils
 from hred.dialog_encdec import DialogEncoderDecoder
 from hred.state import prototype_state
 from candidate import CandidateQuestions
+from alicebot.nlg_alicebot import NLGAlice
 import json
 import random
 import requests
 import delegator
 import codecs
 from nltk import sent_tokenize
+from gensim.models.keyedvectors import KeyedVectors
+import config
+import os
+import cPickle as pkl
+conf = config.get_config()
+
 
 #logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -450,9 +456,11 @@ class NQG_Wrapper(Model_Wrapper):
         logging.info('Generating NQG question for user %s.' % user_id)
         response = ''
         if len(self.questions) > 0:
-            response = self.questions[user_id][0]['pred']
-            self.questions[user_id][0]['used'] += 1
-            self.questions[user_id].sort(key=lambda x: x["used"])
+            qs = [(i,q) for i,q in enumerate(self.questions[user_id]) if q['used'] == 0]
+            if len(qs) > 0:
+                response = qs[0][1]['pred']
+                self.questions[user_id][qs[0][0]]['used'] += 1
+                self.questions[user_id].sort(key=lambda x: x["used"])
 
         context.append(self._format_to_model(response, len(context)))
         return response, context
@@ -534,10 +542,119 @@ class Topic_Wrapper(Model_Wrapper):
         return response, context
 
 
+class DrQA_Wiki_Wrapper(Model_Wrapper):
+    def __init__(self, model_prefix, dict_fname, name):
+        super(DrQA_Wiki_Wrapper, self).__init__(model_prefix, name)
+
+    def get_response(self, user_id='', text='', context=None, article=None, **kwargs):
+        logging.info('------------------------------------')
+        logging.info('Generating DrQA WIKI response for user %s.' % user_id)
+        cont = zmq.Context()
+        socket = cont.socket(zmq.REQ)
+        socket.connect("ipc:///tmp/drqa.pipe")
+        socket.send_json({'question': text, 'top_n': 1, 'n_docs': 5})
+        reply = socket.recv_json()
+
+        response = reply['span']
+        response = self._format_to_user(response)
+        context.append(self._format_to_model(response, len(context)))
+        return response, context
+
+## Shamelessly inspired from MILABOT
+class FactGenerator_Wrapper(Model_Wrapper):
+    def __init__(self, model_prefix, dict_fname, name):
+        super(FactGenerator_Wrapper, self).__init__(model_prefix, name)
+        random_facts_path = '/root/convai/data/facts.txt'
+        all_facts_embedding_path = '/root/convai/data/fact_embedding.mod'
+        self.all_facts = codecs.open(random_facts_path, 'r',encoding='utf-8').readlines()
+        self.all_facts = [all_fact.strip().replace(" .",".").replace("\"", " ")
+                for all_fact in self.all_facts
+                if len(all_fact.strip().split()) > 2]
+
+        self.fact_phrases = ["<fact>",
+                                "Did you know that <fact>?",
+                                "Do you know that <fact>?",
+                                "Here's an interesting fact. <fact>",
+                                "Here's a funny fact! <fact>"]
+
+        self.wh_prefix_phrases = ["I'm not sure. However,",
+                                  "I'm not sure. But.",
+                                  "I'm not quite sure. But",
+                                  "I don't have an answer for that. But",
+                                  "I don't know. But."]
+
+        self.w2v_path = '/root/convai/data/GoogleNews-vectors-negative300.bin'
+        self.w2v = KeyedVectors.load_word2vec_format(self.w2v_path, binary=True)
+        self.w2v_dim = self.w2v['hello'].shape[0]
+        self.w2v_stopwords = conf.stopwords
+        self.wh_words = conf.wh_words
+        if os.path.exists(all_facts_embedding_path):
+            self.all_facts_embeddings = pkl.load(open(all_facts_embedding_path,'r'))
+        else:
+            self.all_facts_embeddings = np.zeros((len(self.all_facts), self.w2v_dim), dtype='float32')
+            for fact_index, fact in enumerate(self.all_facts):
+                fact_embedding, fact_valid_embedding = self.get_utterance_embedding(fact)
+                self.all_facts_embeddings[fact_index, :] = fact_embedding
+            pkl.dump(self.all_facts_embeddings, open(all_facts_embedding_path, 'w'))
 
 
+    def get_utterance_embedding(self, utterance):
+        tokens = utterance.replace("'s","").replace("'t","").replace("'d","").replace("'ll","").replace("'re","").replace("'ve","").replace("'"," ").replace(",", " ").replace(".", " ").replace("!", " ").replace("?", " ").replace("\"", " ").split()
+        X = np.zeros((self.w2v_dim,))
+        for tok in tokens:
+            if (len(tok) > 1) and (not tok in self.w2v_stopwords):
+                if tok in self.w2v:
+                    X += self.w2v[tok]
+
+        if np.linalg.norm(X) < 0.00000000001:
+            return X, False
+        else:
+            return X/np.linalg.norm(X), True
+
+    def get_response(self, user_id='', text='', context=None, **kwargs):
+        context.append(text)
+        if len(context) > 0:
+            dialogue_history_embedding, is_valid_embedding = self.get_utterance_embedding(' '.join(context))
+            last_user_utterance_lower = context[-1].replace("'", " ").replace("\"", " ").replace(".", " ").replace("!", " ").replace("?", " ").replace(",", " ").lower().split()
+            last_user_utterance_has_wh_word = False
+            for word in last_user_utterance_lower:
+                if word in self.wh_words:
+                    last_user_utterance_has_wh_word = True
+                    break
+            scores = np.dot(self.all_facts_embeddings, dialogue_history_embedding.T)
+            facts_indices_sorted = scores.argsort()[::-1]
+            dialogue_history_flattened = ' '.join(context).lower()
+            for fact_index in facts_indices_sorted:
+                fact = self.all_facts[fact_index]
+                if not fact.lower() in dialogue_history_flattened:
+                    fact_phrase_index = random.choice(range(len(self.fact_phrases)))
+                    fact_text = self.fact_phrases[fact_phrase_index].replace("<fact>",fact)
+                    if last_user_utterance_has_wh_word:
+                        fact_text = random.choice(self.wh_prefix_phrases) + ' ' + fact_text
+                    context.append(self._format_to_model(fact_text, len(context)))
+                    return fact_text, context
 
 
+class AliceBot_Wrapper(Model_Wrapper):
+    def __init__(self, model_prefix, dict_fname,name):
+        super(AliceBot_Wrapper, self).__init__(model_prefix, name)
+        self.aliceBot = NLGAlice() 
 
-        
+    def get_response(self, user_id='', text='', context=None, **kwargs):
+        ctext = self._format_to_model(text, len(context))
+        context.append(ctext)
+        # strip context of special tokens
+        clean_context = []
+        if context and len(context) > 0:
+            for cont in context:
+                cln = re.sub("[\(\[\<].*?[\)\]\>]", "", cont)
+                clean_context.append(cln)
+        print clean_context
+        response = ''
+        try:
+            response = self.aliceBot.compute_responses(clean_context, None)
+        except Exception as e:
+            logging.error("Error generating alicebot response")
+        context.append(self._format_to_model(response, len(context)))
+        return response, context
 

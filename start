@@ -8,4 +8,7 @@ cd /root/convai/models/nqg/sentence/
 th online_translate.lua &
 
 cd /root/convai
-THEANO_FLAGS=floatX=float32 python bot.py
+THEANO_FLAGS=floatX=float32 python model_selection_zmq.py &
+
+cd /root/convai
+THEANO_FLAGS=floatX=float32 python bot_zmq.py &
