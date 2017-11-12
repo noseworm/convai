@@ -586,6 +586,15 @@ def ranker(chat_unique_id):
         dont_consider = dont_consider_models
     return consider, dont_consider
 
+# check if any of the current generated responses fall within k previous history
+# If so, remove that response altogether
+def no_duplicate(chat_id, chat_unique_id,k=5):
+    del_models = []
+    for model, response in model_responses[chat_unique_id].iteritems():
+        if response['text'] in set(chat_history[chat_id][-k:]):
+            del_models.append(model)
+    for dm in del_models:
+        del model_responses[chat_unique_id][dm]
 
 
 def get_response(chat_id, text, context, allowed_model=None):
@@ -743,7 +752,8 @@ def get_response(chat_id, text, context, allowed_model=None):
                 response = model_responses[
                     chat_unique_id][ModelID.TOPIC]
                 response['policyID'] = Policy.FIXED
-            elif has_wh_word:
+            elif has_wh_word or ("which" in set(nt_words)
+                    and "?" in set(nt_words)):
                 # get list of common nouns between article and question
                 common = list(set(article_nouns[chat_id]).intersection(
                     set(text.split(' '))))
@@ -756,6 +766,8 @@ def get_response(chat_id, text, context, allowed_model=None):
                     response['policyID'] = Policy.FIXED
 
     if not response:
+        # remove duplicates from k nearest chats
+        no_duplicate(chat_id, chat_unique_id)
         # Ranker based selection
         best_model, dont_consider = ranker(chat_unique_id)
         if dont_consider and len(dont_consider) > 0:
@@ -768,6 +780,7 @@ def get_response(chat_id, text, context, allowed_model=None):
         else:
             # fallback to optimal policy
             # if text contains 2 words or less, add 1 to the bored count
+            # TODO: boring count is not being triggered
             if len(text.strip().split()) <= 2:
                 boring_count[chat_id] += 1
             # if user is bored, change the topic by asking a question
@@ -792,7 +805,8 @@ def get_response(chat_id, text, context, allowed_model=None):
                     if word in set(conf.wh_words):
                         has_wh_word = True
                         break
-                if has_wh_word:
+                if has_wh_word or ("which" in set(nt_words)
+                    and "?" in set(nt_words)):
                     # if the user asked a question, also consider DrQA
                     models.append(ModelID.DRQA)
                 else:
