@@ -18,6 +18,7 @@ from multiprocessing import Process, Pool
 import uuid
 from models.wrapper import HRED_Wrapper, Dual_Encoder_Wrapper, HREDQA_Wrapper,CandidateQuestions_Wrapper, DumbQuestions_Wrapper, DRQA_Wrapper, NQG_Wrapper,Echo_Wrapper, Topic_Wrapper, FactGenerator_Wrapper
 import logging
+from nltk.tokenize import word_tokenize
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(name)s.%(funcName)s +%(lineno)s: %(levelname)-8s [%(process)d] %(message)s',
@@ -400,7 +401,7 @@ used_models = {}      # This dictionary should contain an array per chat_id on t
 # modelIds = [ModelID.HRED_TWITTER, ModelID.HRED_REDDIT, ModelID.DUAL_ENCODER,
 #                 ModelID.FOLLOWUP_QA, ModelID.DUMB_QA, ModelID.DRQA]
 # Debugging
-modelIds = [ModelID.ECHO, ModelID.CAND_QA, ModelID.HRED_TWITTER,
+modelIds = [ModelID.ECHO, ModelID.CAND_QA, ModelID.HRED_TWITTER, ModelID.HRED_REDDIT,
         ModelID.FOLLOWUP_QA, ModelID.DUMB_QA, ModelID.DRQA, ModelID.NQG,
         ModelID.TOPIC, ModelID.FACT_GEN]
 # modelIds = [ModelID.TOPIC]
@@ -612,6 +613,9 @@ def get_response(chat_id, text, context, allowed_model=None):
         # initialize chat history
         chat_history[chat_id] = []
 
+        # initialize model usage history
+        used_models[chat_id] = []
+
         # fire global preprocess call
         submit_job(job_type='preprocess',
                    article=article_text[chat_id],
@@ -709,6 +713,13 @@ def get_response(chat_id, text, context, allowed_model=None):
         else:
             # if text contains emoji's, strip them
             text, emojis = strip_emojis(text)
+            # check if the text contains wh words
+            nt_words = word_tokenize(text.lower())
+            has_wh_word = False
+            for word in nt_words:
+                if word in set(conf.wh_words):
+                    has_wh_word = True
+                    break
             if emojis and len(text.strip()) < 1:
                 # if text had only emoji, give back the emoji itself
                 # NOTE: shouldn't we append the `resp` (in this case emoji)
@@ -727,7 +738,7 @@ def get_response(chat_id, text, context, allowed_model=None):
                 response = model_responses[
                     chat_unique_id][ModelID.TOPIC]
                 response['policyID'] = Policy.FIXED
-            elif '?' in text:
+            elif has_wh_word:
                 # get list of common nouns between article and question
                 common = list(set(article_nouns[chat_id]).intersection(
                     set(text.split(' '))))
@@ -770,7 +781,13 @@ def get_response(chat_id, text, context, allowed_model=None):
                 # randomly decide a model to query to get a response:
                 models = [ModelID.HRED_REDDIT, ModelID.HRED_TWITTER,
                           ModelID.DUAL_ENCODER]
-                if '?' in text:
+                nt_words = word_tokenize(text.lower())
+                has_wh_word = False
+                for word in nt_words:
+                    if word in set(conf.wh_words):
+                        has_wh_word = True
+                        break
+                if has_wh_word:
                     # if the user asked a question, also consider DrQA
                     models.append(ModelID.DRQA)
                 else:
@@ -795,6 +812,7 @@ def get_response(chat_id, text, context, allowed_model=None):
     # add user and response pair in chat_history
     chat_history[response['chat_id']].append(response['context'][-1])
     chat_history[response['chat_id']].append(response['text'])
+    used_models[chat_id].append(response['model_name'])
     # Again use ZMQ, because lulz
     response_queue.put(response)
     # clean the unique chat ID
