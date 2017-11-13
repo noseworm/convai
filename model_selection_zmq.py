@@ -767,12 +767,16 @@ def get_response(chat_id, text, context, allowed_model=None):
                 if allowed_model in model_responses[chat_unique_id]:
                     done_processing = True
                     break
+            # Wait for atleast FACT_GEN to arrive
+            elif ModelID.FACT_GEN not in set(model_responses[chat_unique_id].keys()):
+                done_processing = False
+                wait_for += 1
             # Wait for all the models to arrive - REDUNDANT
             elif len(set(model_responses[chat_unique_id].keys())
                     .intersection(set(modelIds))) == len(modelIds):
                 done_processing = True
                 break
-            # tick
+        # tick
         wait_for -= 1
         time.sleep(1)
 

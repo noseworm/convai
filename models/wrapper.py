@@ -508,7 +508,7 @@ class NQG_Wrapper(Model_Wrapper):
             for i,preds in enumerate(self.questions[chat_id]):
                 if 'source: source:' in preds['pred']:
                     rm_index.append(i)
-            self.questions[chat_id] = [qs for i,qs in self.questions[chat_id] if i not in set(rm_index)]
+            self.questions[chat_id] = [qs for i,qs in enumerate(self.questions[chat_id]) if i not in set(rm_index)]
             self.questions[chat_id].sort(key=lambda x:  x["score"])
         except Exception as e:
             logging.info('Error in NQG article fetching')
