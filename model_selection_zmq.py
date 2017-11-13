@@ -80,12 +80,12 @@ class ModelID:
     HRED_TWITTER = 'hred-twitter'
     DUMB_QA = 'dumb_qa'
     NQG = 'nqg'
-    FOLLOWUP_QA = 'followup_qa'
+    # FOLLOWUP_QA = 'followup_qa'
     CAND_QA = 'candidate_question'
     TOPIC = 'topic_model'
     FACT_GEN = 'fact_gen'
     ALICEBOT = 'alicebot'
-    ECHO = 'echo_model'  # just for debugging purposes
+    # ECHO = 'echo_model'  # just for debugging purposes
     ALL = 'all'          # stub to represent all allowable models
 
 
@@ -176,69 +176,69 @@ class ModelClient():
             self.model = HRED_Wrapper(conf.hred['reddit_model_prefix'],
                                       conf.hred['reddit_dict_file'],
                                       ModelID.HRED_REDDIT)
-            self.estimate = True
+            self.estimate = True  # always sampled according to score
         if model_name == ModelID.HRED_TWITTER:
             logging.info("Initializing HRED Twitter")
             self.model = HRED_Wrapper(conf.hred['twitter_model_prefix'],
                                       conf.hred['twitter_dict_file'],
                                       ModelID.HRED_TWITTER)
-            self.estimate = True
-        if model_name == ModelID.FOLLOWUP_QA:
-            logging.info("Initializing HRED Followup")
-            self.model = HREDQA_Wrapper(conf.followup['model_prefix'],
-                                        conf.followup['dict_file'],
-                                        ModelID.FOLLOWUP_QA)
-            self.estimate = True
+            self.estimate = True  # always sampled according to score
+        # if model_name == ModelID.FOLLOWUP_QA:
+        #     logging.info("Initializing HRED Followup")
+        #     self.model = HREDQA_Wrapper(conf.followup['model_prefix'],
+        #                                 conf.followup['dict_file'],
+        #                                 ModelID.FOLLOWUP_QA)
+        #     self.estimate = True  # sampled according to score when user didn't ask a question
         if model_name == ModelID.DUAL_ENCODER:
             logging.info("Initializing Dual Encoder")
             self.model = Dual_Encoder_Wrapper(conf.de['reddit_model_prefix'],
                                               conf.de['reddit_data_file'],
                                               conf.de['reddit_dict_file'],
                                               ModelID.DUAL_ENCODER)
-            self.estimate = True
+            self.estimate = True  # always sampled according to score
         if model_name == ModelID.HUMAN_IMITATOR:
             logging.info("Initializing Dual Encoder on Human data")
             self.model = Human_Imitator_Wrapper(conf.de['convai-h2h_model_prefix'],
                                                 conf.de['convai-h2h_data_file'],
                                                 conf.de['convai-h2h_dict_file'],
                                                 ModelID.HUMAN_IMITATOR)
-            self.estimate = True
+            self.estimate = True  # sampled according to score when user is bored
         if model_name == ModelID.DRQA:
             logging.info("Initializing DRQA")
             self.model = DRQA_Wrapper('', '', ModelID.DRQA)
-            self.estimate = False
+            self.estimate = True  # sampled according to score when user asked a question
         if model_name == ModelID.DUMB_QA:
             logging.info("Initializing DUMB QA")
             self.model = DumbQuestions_Wrapper(
                 '', conf.dumb['dict_file'], ModelID.DUMB_QA)
-            self.estimate = True
+            self.estimate = False  # only used when user typed a simple enough turn
         if model_name == ModelID.NQG:
             logging.info("Initializing NQG")
             self.model = NQG_Wrapper('', '', ModelID.NQG)
-            self.estimate = True
-        if model_name == ModelID.ECHO:
-            logging.info("Initializing Echo")
-            self.model = Echo_Wrapper('', '', ModelID.ECHO)
-            self.estimate = False
+            self.estimate = True  # sampled according to score when user is bored or when user didn't ask a question
+        # if model_name == ModelID.ECHO:
+        #     logging.info("Initializing Echo")
+        #     self.model = Echo_Wrapper('', '', ModelID.ECHO)
+        #     self.estimate = False
         if model_name == ModelID.CAND_QA:
             logging.info("Initializing Candidate Questions")
             self.model = CandidateQuestions_Wrapper('',
                                                     conf.candidate['dict_file'],
                                                     ModelID.CAND_QA)
-            self.estimate = False
+            self.estimate = True  # sampled according to score when user is bored or when user didn't ask a question
         if model_name == ModelID.TOPIC:
             logging.info("Initializing topic model")
             self.model = Topic_Wrapper('', '', '',conf.topic['dir_name'],
                     conf.topic['model_name'], conf.topic['top_k'])
-            self.estimate = False
+            self.estimate = False  # only used when user requested article topic
         if model_name == ModelID.FACT_GEN:
             logging.info("Initializing fact generator")
             self.model = FactGenerator_Wrapper('','','')
-            self.estimate = False
+            self.estimate = True  # sampled according to score when user is bored
         if model_name == ModelID.ALICEBOT:
             logging.info("Initializing Alicebot")
             self.model = AliceBot_Wrapper('','','')
-            self.estimate = True
+            self.estimate = True  # always sampled according to score
         # message queue. This contains the responses generated by the model
         self.queue = Queue()
         self.is_running = True
@@ -431,11 +431,11 @@ generic_words_list = set(generic_words_list)  # remove duplicates
 #                 ModelID.FOLLOWUP_QA, ModelID.DUMB_QA, ModelID.DRQA]
 # Debugging
 modelIds = [
-    ModelID.ECHO,          # return user input
+    # ModelID.ECHO,          # return user input
     ModelID.CAND_QA,       # return a question about an entity in the article
     ModelID.HRED_TWITTER,  # general generative model on twitter data
     ModelID.HRED_REDDIT,   # general generative model on reddit data
-    ModelID.FOLLOWUP_QA,   # general generative model on questions (ie: what? why? how?)
+    # ModelID.FOLLOWUP_QA,   # general generative model on questions (ie: what? why? how?)
     ModelID.DUMB_QA,       # return predefined answer to 'simple' questions
     ModelID.DRQA,          # return answer about the article
     ModelID.NQG,           # generate a question for each sentence in the article
@@ -450,10 +450,8 @@ modelIds = [
 # last ack time, contains datetimes
 ack_times = {model:None for model in modelIds}
 
-# initialize only these models to catch the patterns
-# TODO: or probably a pattern catcher?
-dumb_qa_model = DumbQuestions_Wrapper(
-    '', conf.dumb['dict_file'], ModelID.DUMB_QA)
+# TODO: make sure not used in other files before removing
+# dumb_qa_model = DumbQuestions_Wrapper('', conf.dumb['dict_file'], ModelID.DUMB_QA)
 
 
 def start_models():
@@ -629,11 +627,12 @@ def ranker(chat_unique_id):
         logging.info("{} - {} - {}".format(model, conf, score))
         if conf > 0.75:
             rank_score = conf * score
-            if model != ModelID.NQG:
+            # NQG and HUMAN_IMITATOR are usually overrated, don't select them right away
+            if model != ModelID.NQG and model != ModelID.HUMAN_IMITATOR:
                 consider_models.append((model, rank_score))
         if conf < 0.25 and conf != 0:
             rank_score = conf * score
-            if model != ModelID.ECHO: # keep echo model for failure handling case
+            if model != ModelID.FACT_GEN: # keep fact generator model for failure handling case
                 dont_consider_models.append((model, rank_score))
         all_models.append((model, conf * score))
     all_models = sorted(all_models, key=lambda x:x[1], reverse=True)
@@ -850,12 +849,15 @@ def get_response(chat_id, text, context, allowed_model=None):
             if len(text.strip().split()) <= 2 or generic_turn:
                 boring_count[chat_id] += 1
             # list of available models to use if bored
-            boring_avl = list(set(model_responses[chat_unique_id])
-                    .intersection(set([ModelID.NQG, ModelID.FACT_GEN, ModelID.CAND_QA])))
+            bored_models = [ModelID.NQG, ModelID.FACT_GEN, ModelID.CAND_QA, ModelID.HUMAN_IMITATOR]
+            boring_avl = list(set(model_responses[chat_unique_id]).intersection(set(bored_models)))
             # if user is bored, change the topic by asking a question
             # (only if that question is not asked before)
             if boring_count[chat_id] >= BORED_COUNT and len(boring_avl) > 0:
-                selection = random.choice(boring_avl)
+                # assign model selection probability based on estimator confidence
+                confs = [float(model_responses[chat_unique_id][model]['conf']) for model in boring_avl]
+                norm_confs = confs / np.sum(confs)
+                selection = np.random.choice(boring_avl, 1, p=norm_confs)
                 response = model_responses[chat_unique_id][selection]
                 response['policyID'] = Policy.BORED
                 boring_count[chat_id] = 0  # reset bored count to 0
@@ -865,8 +867,7 @@ def get_response(chat_id, text, context, allowed_model=None):
                 # probability by small amount
                 # randomly decide a model to query to get a response:
                 models = [ModelID.HRED_REDDIT, ModelID.HRED_TWITTER,
-                          ModelID.DUAL_ENCODER, ModelID.HUMAN_IMITATOR,
-                          ModelID.ALICEBOT]
+                          ModelID.DUAL_ENCODER, ModelID.ALICEBOT]
                 has_wh_word = False
                 for word in nt_words:
                     if word in set(conf.wh_words):
@@ -879,7 +880,7 @@ def get_response(chat_id, text, context, allowed_model=None):
                 else:
                     # if the user didn't ask a question, also consider models
                     # that ask questions: hred-qa, nqg, and cand_qa
-                    models.extend([ModelID.FOLLOWUP_QA, ModelID.NQG, ModelID.CAND_QA])
+                    models.extend([ModelID.NQG, ModelID.CAND_QA])
 
                 available_models = list(set(model_responses[chat_unique_id]).intersection(models))
                 if len(available_models) > 0:

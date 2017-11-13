@@ -567,9 +567,9 @@ class Topic_Wrapper(Model_Wrapper):
 
     def isMatch(self, text=''):
         # catch responses of the style "what is this article about"
-        question_match_1 = ".*what\\s*(is|'?s|does)?\\s(this|it)\\s(article)?\\s?(talks?)?\\s?(about)\\s*(\\?)*"
+        question_match_1 = ".*what\\s*(is|'?s|does)?\\s?(this|it|the)?\\s?(article)?\\s?(talks?)?\\s?(about)\\s*(\\?)*"
         # catch also responses of the style : "what do you think of this article"
-        question_match_2 = ".*what\\sdo\\syou\\sthink\\s(of|about)\\s(this|it)?\\s?(article)\\s*\\?*"
+        question_match_2 = ".*what\\sdo\\syou\\sthink\\s(of|about)\\s(this|it|the)?\\s?(article)\\s*\\?*"
         return re.match(question_match_1, text, re.IGNORECASE) or re.match(question_match_2, text, re.IGNORECASE)
 
     def preprocess(self, chat_id='', article_text='', **kwargs):
