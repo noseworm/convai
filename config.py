@@ -23,7 +23,10 @@ config_data = {
         'de': {
             'reddit_model_prefix':'data/reddit-bpe5k_exp2/reddit_exp2',
             'reddit_data_file':'data/DE.dataset.pkl',
-            'reddit_dict_file':'data/DE.dict.pkl'
+            'reddit_dict_file':'data/DE.dict.pkl',
+            'convai-h2h_model_prefix': 'data/convai-h2h_exp1/convai-h2h_exp1',
+            'convai-h2h_data_file':'data/round1_DE.dataset.pkl',
+            'convai-h2h_dict_file':'data/round1_DE.dict.pkl'
         },
         'followup':{
             'model_prefix':'data/followup/',
@@ -85,12 +88,14 @@ config_data = {
             'everything', 'does', 'either', 'be', 'by', 'on', 'about', 'ok',
             'anything', 'oh', 'of', 'or', 'seeing', 'own', 'into', 'down',
             'right', 'your', 'her', 'there', 'question', 'start', 'way', 'was',
-            'himself', 'alexa', 'Alexa', 'but', 'hi', 'hear', 'ha', 'with',
+            'himself', 'convai', 'ConvAI', 'but', 'hi', 'hear', 'ha', 'with',
             'dull', 'he', 'made', 'wish', 'up', 'us', 'am', 'an', 'as', 'at',
             'aw', 'home', 'happen', 'again', 'no', 'nah', 'when', 'other',
             'you', 'really', 'nice', 'alright', 'having', 'one'],
-        "wh_words" : ['who', 'where', 'when', 'why', 'what', 'how', 'which']
+        "wh_words" : ['who', 'where', 'when', 'why', 'what', 'how',
+            'whos', 'wheres', 'whens', 'whys', 'whats', 'hows']
 }
 
 def get_config():
     return dotdict(config_data)
+

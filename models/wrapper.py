@@ -34,8 +34,8 @@ logging.basicConfig(
     format='%(asctime)s %(name)s.%(funcName)s +%(lineno)s: %(levelname)-8s [%(process)d] %(message)s',
 )
 
-NQG_ENDURL = 'http://localhost:8080'
-DRQA_ENDURL = 'http://0.0.0.0:8888'
+NQG_ENDURL = 'http://localhost:8080'  # TODO: update this for final submission?
+DRQA_ENDURL = 'http://0.0.0.0:8888'   # TODO: update this for final submission?
 FASTTEXT_DIR = '/root/convai/models/fastText/'
 
 
@@ -96,7 +96,9 @@ class Model_Wrapper(object):
 
 
 class HRED_Wrapper(Model_Wrapper):
-
+    """
+    GENERIC GENERATIVE MODEL
+    """
     def __init__(self, model_prefix, dict_file, name):
         # Load the HRED model.
         super(HRED_Wrapper, self).__init__(model_prefix, name)
@@ -139,7 +141,9 @@ class HRED_Wrapper(Model_Wrapper):
 
 
 class Dual_Encoder_Wrapper(Model_Wrapper):
-
+    """
+    GENERIC RETRIEVER MODEL
+    """
     def __init__(self, model_prefix, data_fname, dict_fname, name, n_resp=10000):
         super(Dual_Encoder_Wrapper, self).__init__(model_prefix, name)
 
@@ -259,7 +263,45 @@ class Dual_Encoder_Wrapper(Model_Wrapper):
         return response, context
 
 
+class Human_Imitator_Wrapper(Dual_Encoder_Wrapper):
+    """
+    RETRIEVE THE MOST LIKELY HUMAN RESPONSE FROM CONVAI ROUND1 CHATS
+    NOTE: SUBCLASS OF DUAL_ENCODER_WRAPPER
+    """
+    def __init__(self, model_prefix, data_fname, dict_fname, name, n_resp=10000):
+        super(Human_Imitator_Wrapper, self).__init__(model_prefix, data_fname, dict_fname, name, n_resp)
+
+    def get_response(self, user_id='', text='', context=None, article='', **kwargs):
+        logging.info('--------------------------------')
+        logging.info('Generating DE (human) response for user %s.' % user_id)
+        text = utils.tokenize_utterance(text.strip().lower())
+        context.append(text)
+        logging.info('Using context: %s' % ' '.join(list(context)))
+
+        response_set_str  = self.cached_retrieved_data['r']]
+        response_set_embs = self.cached_retrieved_data['r_embs']
+
+        cached_retrieved_data = self.model.retrieve(
+            context_set=[' </s> '.join(list(context))],
+            response_set=response_set_str,
+            response_embs=response_set_embs,
+            k=1, batch_size=1, verbose=False
+        )
+        response = cached_retrieved_data['r_retrieved'][0][0]
+
+        # remove all tags to avoid having <unk>
+        response = self._format_to_user(response)
+        # add appropriate tags to the response in the context
+        context.append(response)
+        logging.info('Response: %s' % response)
+        return response, context
+
+
 class HREDQA_Wrapper(Model_Wrapper):
+    """
+    GENERATE A FOLLOWUP QUESTION. ie: WHAT? WHY? YOU?
+    BAD MODEL IN GENERAL...
+    """
     def __init__(self, model_prefix, dict_fname, name):
         super(HREDQA_Wrapper, self).__init__(model_prefix, name)
 
@@ -301,6 +343,9 @@ class HREDQA_Wrapper(Model_Wrapper):
 
 
 class CandidateQuestions_Wrapper(Model_Wrapper):
+    """
+    ASK A PREDEFINED QUESTION ABOUT AN ENTITY IN THE ARTICLE
+    """
     def __init__(self, model_prefix, dict_fname, name):
         super(CandidateQuestions_Wrapper, self).__init__(model_prefix, name)
         # Use these questions if no suitable questions are found
@@ -346,6 +391,9 @@ class CandidateQuestions_Wrapper(Model_Wrapper):
 
 
 class DumbQuestions_Wrapper(Model_Wrapper):
+    """
+    IF USER ASKED A SIMPLE QUESTION RETURN A PREDEFINED ANSWER
+    """
     def __init__(self, model_prefix, dict_fname, name):
         super(DumbQuestions_Wrapper, self).__init__(model_prefix, name)
         self.data = json.load(open(dict_fname, 'r'))
@@ -379,6 +427,9 @@ class DumbQuestions_Wrapper(Model_Wrapper):
 
 
 class DRQA_Wrapper(Model_Wrapper):
+    """
+    GIVE AN ANSWER RELATED TO THE ARTICLE
+    """
     def __init__(self, model_prefix, dict_fname, name):
         super(DRQA_Wrapper, self).__init__(model_prefix, name)
         self.articles = {}
@@ -427,6 +478,9 @@ class DRQA_Wrapper(Model_Wrapper):
 
 
 class NQG_Wrapper(Model_Wrapper):
+    """
+    GENERATES A QUESTION FOR EACH SENTENCE IN THE ARTICLE
+    """
     def __init__(self, model_prefix, dict_fname, name):
         super(NQG_Wrapper, self).__init__(model_prefix, name)
         self.questions = {}
@@ -470,6 +524,9 @@ class NQG_Wrapper(Model_Wrapper):
 
 
 class Echo_Wrapper(Model_Wrapper):
+    """
+    ECHO: RETURN THE INPUT
+    """
     def __init__(self, model_prefix, dict_fname, name):
         super(Echo_Wrapper, self).__init__(model_prefix, name)
 
@@ -486,6 +543,9 @@ class Echo_Wrapper(Model_Wrapper):
         return response, context
 
 class Topic_Wrapper(Model_Wrapper):
+    """
+    IF USER ASKS FOR THE TOPIC, RETURN TOPIC CLASSIFICATION USING FASTTEXT
+    """
     def __init__(self, model_prefix, dict_fname, name, dir_name, model_name, top_k=2):
         super(Topic_Wrapper, self).__init__(model_prefix, name)
         ## Read the classes once
@@ -499,10 +559,18 @@ class Topic_Wrapper(Model_Wrapper):
             for line in fp:
                 self.topics.append(line.rstrip())
 
-    def isMatch(self, text=''):
-        question_match_regex ="what\\s*(is|'?s)\\s?(this)\\s?(article)?\\s?(about)(\\?)*"
-        return re.match(question_match_regex, text, re.IGNORECASE)
+        self.topic_phrases = ["<topic>",
+                             "This article is about <topic>",
+                             "I think it's about <topic>",
+                             "It's about <topic>",
+                             "The article is related to <topic>"]
 
+    def isMatch(self, text=''):
+        # catch responses of the style "what is this article about"
+        question_match_1 = "what\\s*(is|'?s|does)?\\s(this|it)\\s(article)?\\s?(talks?)?\\s?(about)\\s*(\\?)*"
+        # catch also responses of the style : "what do you think of this article"
+        question_match_2 = "what\\sdo\\syou\\sthink\\s(of|about)\\s(this|it)?\\s?(article)\\s*\\?*"
+        return re.match(question_match_1, text, re.IGNORECASE) or re.match(question_match_2, text, re.IGNORECASE)
 
     def preprocess(self, chat_id='', article_text='', **kwargs):
         """Calculate the article topic in preprocess call
@@ -535,7 +603,9 @@ class Topic_Wrapper(Model_Wrapper):
         logging.info('---------------------------------')
         logging.info('Generating topic for the article')
         if len(self.predicted) > 0 and self.isMatch(text):
-            response = self.predicted[0][0] # give back the top topic
+            topic = self.predicted[0][0] # give back the top topic
+            topic_phrase_index = random.choice(range(len(self.topic_phrases)))
+            response = self.fact_phrases[fact_phrase_index].replace("<topic>", topic)
         else:
             response = ''
         context.append(self._format_to_model(response, len(context)))
@@ -543,6 +613,9 @@ class Topic_Wrapper(Model_Wrapper):
 
 
 class DrQA_Wiki_Wrapper(Model_Wrapper):
+    """
+    GIVE AN ANSWER RELATED TO WIKIPEDIA DUMP
+    """
     def __init__(self, model_prefix, dict_fname, name):
         super(DrQA_Wiki_Wrapper, self).__init__(model_prefix, name)
 
@@ -562,6 +635,9 @@ class DrQA_Wiki_Wrapper(Model_Wrapper):
 
 ## Shamelessly inspired from MILABOT
 class FactGenerator_Wrapper(Model_Wrapper):
+    """
+    RETURN A FACT ACCRODING TO THE CONVERSATION HISTORY
+    """
     def __init__(self, model_prefix, dict_fname, name):
         super(FactGenerator_Wrapper, self).__init__(model_prefix, name)
         random_facts_path = '/root/convai/data/facts.txt'
@@ -575,7 +651,7 @@ class FactGenerator_Wrapper(Model_Wrapper):
                                 "Did you know that <fact>?",
                                 "Do you know that <fact>?",
                                 "Here's an interesting fact. <fact>",
-                                "Here's a funny fact! <fact>"]
+                                "Here's a fact! <fact>"]
 
         self.wh_prefix_phrases = ["I'm not sure. However,",
                                   "I'm not sure. But.",
@@ -636,6 +712,9 @@ class FactGenerator_Wrapper(Model_Wrapper):
 
 
 class AliceBot_Wrapper(Model_Wrapper):
+    """
+    USES ALICE_BOT TO GIVE A REPLY
+    """
     def __init__(self, model_prefix, dict_fname,name):
         super(AliceBot_Wrapper, self).__init__(model_prefix, name)
         self.aliceBot = NLGAlice() 

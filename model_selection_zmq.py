@@ -17,7 +17,7 @@ from Queue import Queue
 from threading import Thread
 from multiprocessing import Process, Pool
 import uuid
-from models.wrapper import HRED_Wrapper, Dual_Encoder_Wrapper, HREDQA_Wrapper,CandidateQuestions_Wrapper, DumbQuestions_Wrapper, DRQA_Wrapper, NQG_Wrapper,Echo_Wrapper, Topic_Wrapper, FactGenerator_Wrapper, AliceBot_Wrapper
+from models.wrapper import HRED_Wrapper, Dual_Encoder_Wrapper, Human_Imitator_Wrapper, HREDQA_Wrapper,CandidateQuestions_Wrapper, DumbQuestions_Wrapper, DRQA_Wrapper, NQG_Wrapper,Echo_Wrapper, Topic_Wrapper, FactGenerator_Wrapper, AliceBot_Wrapper
 import logging
 from nltk.tokenize import word_tokenize
 logging.basicConfig(
@@ -75,6 +75,7 @@ class Policy:
 class ModelID:
     DRQA = 'drqa'
     DUAL_ENCODER = 'de'
+    HUMAN_IMITATOR = 'de-human'
     HRED_REDDIT = 'hred-reddit'
     HRED_TWITTER = 'hred-twitter'
     DUMB_QA = 'dumb_qa'
@@ -88,8 +89,9 @@ class ModelID:
     ALL = 'all'          # stub to represent all allowable models
 
 
-ALL_POLICIES = [Policy.OPTIMAL, Policy.HREDx2, Policy.HREDx3,
-                Policy.HREDx2_DE, Policy.HREDx2_DRQA, Policy.DE_DRQA]
+# TODO: make sure never used in other files before removing
+# ALL_POLICIES = [Policy.OPTIMAL, Policy.HREDx2, Policy.HREDx3,
+#                 Policy.HREDx2_DE, Policy.HREDx2_DRQA, Policy.DE_DRQA]
 
 BORED_COUNT = 2
 
@@ -97,7 +99,7 @@ BORED_COUNT = 2
 # Instead of the previous architecture, now we would like to respond faster.
 # So the focus is that even if some models are taking a lot of time,
 # do not wait for them!
-WAIT_TIME = 5
+WAIT_TIME = 7
 
 # PINGBACK
 # Check every time if the time now - time last pinged back of a model
@@ -194,6 +196,13 @@ class ModelClient():
                                               conf.de['reddit_dict_file'],
                                               ModelID.DUAL_ENCODER)
             self.estimate = True
+        if model_name == ModelID.HUMAN_IMITATOR:
+            logging.info("Initializing Dual Encoder on Human data")
+            self.model = Human_Imitator_Wrapper(conf.de['convai-h2h_model_prefix'],
+                                                conf.de['convai-h2h_data_file'],
+                                                conf.de['convai-h2h_dict_file'],
+                                                ModelID.HUMAN_IMITATOR)
+            self.estimate = True
         if model_name == ModelID.DRQA:
             logging.info("Initializing DRQA")
             self.model = DRQA_Wrapper('', '', ModelID.DRQA)
@@ -268,10 +277,8 @@ class ModelClient():
         with self.sess_long.as_default():
             with self.model_graph_long.as_default():
                 self.estimator_long.load(self.sess_long, model_path_long, model_id_long, model_name_long)
-        # TODO: close the two sessions when not needed anymore! ie: at the of each chat
 
         logging.info("Done building NN")
-
 
         self.warmup()
         self.run()
@@ -405,19 +412,39 @@ chat_history = {}     # save the context / response pairs for a particular chat 
 candidate_model = {}  # map from chat_id to a simple model for the article
 article_nouns = {}    # map from chat_id to a list of nouns in the article
 boring_count = {}     # number of times the user responded with short answer
-policy_mode = Policy.NONE
+# policy_mode = Policy.NONE  # TODO: make sure never used before removing
 job_queue = Queue()
 response_queue = Queue()
 model_responses = {}
 used_models = {}      # This dictionary should contain an array per chat_id on the history of used models
+
+# list of generic words to detect if user is bored
+generic_words_list = []
+with open('/root/convai/data/generic_list.txt') as fp:
+    for line in fp:
+        generic_words_list.append(line.strip())
+generic_words_list = set(generic_words_list)  # remove duplicates
+
 # self.models = [self.hred_twitter, self.hred_reddit,
 #               self.dual_enc, self.qa_hred, self.dumb_qa, self.drqa]
 # modelIds = [ModelID.HRED_TWITTER, ModelID.HRED_REDDIT, ModelID.DUAL_ENCODER,
 #                 ModelID.FOLLOWUP_QA, ModelID.DUMB_QA, ModelID.DRQA]
 # Debugging
-modelIds = [ModelID.ECHO, ModelID.CAND_QA, ModelID.HRED_TWITTER, ModelID.HRED_REDDIT,
-        ModelID.FOLLOWUP_QA, ModelID.DUMB_QA, ModelID.DRQA, ModelID.NQG,
-        ModelID.TOPIC, ModelID.FACT_GEN, ModelID.ALICEBOT, ModelID.DUAL_ENCODER]
+modelIds = [
+    ModelID.ECHO,          # return user input
+    ModelID.CAND_QA,       # return a question about an entity in the article
+    ModelID.HRED_TWITTER,  # general generative model on twitter data
+    ModelID.HRED_REDDIT,   # general generative model on reddit data
+    ModelID.FOLLOWUP_QA,   # general generative model on questions (ie: what? why? how?)
+    ModelID.DUMB_QA,       # return predefined answer to 'simple' questions
+    ModelID.DRQA,          # return answer about the article
+    ModelID.NQG,           # generate a question for each sentence in the article
+    ModelID.TOPIC,         # return article topic
+    ModelID.FACT_GEN,      # return a fact based on conversation history
+    ModelID.ALICEBOT,      # give all responsabilities to A.L.I.C.E. ...
+    ModelID.DUAL_ENCODER,  # return a reddit turn
+    ModelID.HUMAN_IMITATOR # return a human turn from convai round1
+]
 # modelIds = [ModelID.TOPIC]
 
 # last ack time, contains datetimes
@@ -554,7 +581,7 @@ def clean(chat_id):
     candidate_model.pop(chat_id, None)
     article_nouns.pop(chat_id, None)
     boring_count.pop(chat_id, None)
-    policy_mode = Policy.NONE
+    # policy_mode = Policy.NONE  # TODO: make sure never used before removing
 
 # check the last ack time to determine if the model is dead
 def dead_models():
@@ -622,7 +649,7 @@ def ranker(chat_unique_id):
 
 # check if any of the current generated responses fall within k previous history
 # If so, remove that response altogether
-def no_duplicate(chat_id, chat_unique_id,k=5):
+def no_duplicate(chat_id, chat_unique_id, k=5):
     del_models = []
     for model, response in model_responses[chat_unique_id].iteritems():
         if response['text'] in set(chat_history[chat_id][-k:]):
@@ -710,7 +737,7 @@ def get_response(chat_id, text, context, allowed_model=None):
     # if we have answer ready before the wait period, exit and return the answer
     done_processing = False
     wait_for = WAIT_TIME
-    # response should be a dict of (response, context, model_name, policy_mode)
+    # response should be a dict of (text, context, model_name, policy_mode)
     response = {}
     # add feature list as another key of response
     done_features = set()
@@ -726,9 +753,6 @@ def get_response(chat_id, text, context, allowed_model=None):
                 done_processing = True
                 break
         else:
-            # if allowed model is not all, then wait for it to arrive
-            # by elongating the wait_for time (useful for debugging certain
-            # models)
             # Only for debugging
             if allowed_model and allowed_model != ModelID.ALL:
                 if allowed_model in model_responses[chat_unique_id]:
@@ -771,10 +795,8 @@ def get_response(chat_id, text, context, allowed_model=None):
                     break
             if emojis and len(text.strip()) < 1:
                 # if text had only emoji, give back the emoji itself
-                # NOTE: shouldn't we append the `resp` (in this case emoji)
-                # to the context like everywhere else?
                 response = {'response': emojis, 'context': context,
-                            'model_name': 'emoji', 'policy': policy_mode}
+                            'model_name': 'emoji', 'policy': Policy.NONE}
 
             # if query falls under dumb questions, respond appropriately
             elif ModelID.DUMB_QA in model_responses[chat_unique_id]:
@@ -782,11 +804,13 @@ def get_response(chat_id, text, context, allowed_model=None):
                 response = model_responses[
                     chat_unique_id][ModelID.DUMB_QA]
                 response['policyID'] = Policy.FIXED
+            # if query falls under topic request, respond with the article topic
             elif ModelID.TOPIC in model_responses[chat_unique_id]:
                 logging.info("Matched topic preset patterns")
                 response = model_responses[
                     chat_unique_id][ModelID.TOPIC]
                 response['policyID'] = Policy.FIXED
+            # if query is a question, try to reply with DrQA
             elif has_wh_word or ("which" in set(nt_words)
                     and "?" in set(nt_words)):
                 # get list of common nouns between article and question
@@ -801,7 +825,7 @@ def get_response(chat_id, text, context, allowed_model=None):
                     response['policyID'] = Policy.FIXED
 
     if not response:
-        # remove duplicates from k nearest chats
+        # remove duplicates responses from k nearest chats
         no_duplicate(chat_id, chat_unique_id)
         # Ranker based selection
         best_model, dont_consider = ranker(chat_unique_id)
@@ -814,14 +838,22 @@ def get_response(chat_id, text, context, allowed_model=None):
             response['policyID'] = Policy.LEARNED
         else:
             # fallback to optimal policy
+            nt_words = word_tokenize(text.lower())
+            # check if user said only generic words:
+            generic_turn = True
+            for word in nt_words:
+                if word not in generic_words_list:
+                    generic_turn = False
+                    break
             # if text contains 2 words or less, add 1 to the bored count
-            # TODO: boring count is not being triggered
-            if len(text.strip().split()) <= 2:
+            # also consider the case when the user says only generic things
+            if len(text.strip().split()) <= 2 or generic_turn:
                 boring_count[chat_id] += 1
+            # list of available models to use if bored
+            boring_avl = list(set(model_responses[chat_unique_id])
+                    .intersection(set([ModelID.NQG, ModelID.FACT_GEN, ModelID.CAND_QA])))
             # if user is bored, change the topic by asking a question
             # (only if that question is not asked before)
-            boring_avl = list(set(model_responses[chat_unique_id])
-                    .intersection(set([ModelID.NQG, ModelID.FACT_GEN])))
             if boring_count[chat_id] >= BORED_COUNT and len(boring_avl) > 0:
                 selection = random.choice(boring_avl)
                 response = model_responses[chat_unique_id][selection]
@@ -833,8 +865,8 @@ def get_response(chat_id, text, context, allowed_model=None):
                 # probability by small amount
                 # randomly decide a model to query to get a response:
                 models = [ModelID.HRED_REDDIT, ModelID.HRED_TWITTER,
-                          ModelID.DUAL_ENCODER, ModelID.ALICEBOT]
-                nt_words = word_tokenize(text.lower())
+                          ModelID.DUAL_ENCODER, ModelID.HUMAN_IMITATOR,
+                          ModelID.ALICEBOT]
                 has_wh_word = False
                 for word in nt_words:
                     if word in set(conf.wh_words):
@@ -845,12 +877,13 @@ def get_response(chat_id, text, context, allowed_model=None):
                     # if the user asked a question, also consider DrQA
                     models.append(ModelID.DRQA)
                 else:
-                    # if the user didn't ask a question, also consider hred-qa
-                    models.append(ModelID.FOLLOWUP_QA)
+                    # if the user didn't ask a question, also consider models
+                    # that ask questions: hred-qa, nqg, and cand_qa
+                    models.extend([ModelID.FOLLOWUP_QA, ModelID.NQG, ModelID.CAND_QA])
 
                 available_models = list(set(model_responses[chat_unique_id]).intersection(models))
                 if len(available_models) > 0:
-                    # TODO: assign model selection probability based on estimator confidence
+                    # assign model selection probability based on estimator confidence
                     confs = [float(model_responses[chat_unique_id][model]['conf']) for model in available_models]
                     norm_confs = confs / np.sum(confs)
                     chosen_model = np.random.choice(available_models, 1, p=norm_confs)
@@ -862,7 +895,6 @@ def get_response(chat_id, text, context, allowed_model=None):
         logging.warn("Failure to obtain a response, using fact gen")
         response = model_responses[chat_unique_id][ModelID.FACT_GEN]
         response['policyID'] = Policy.FIXED
-
 
     # Now we have a response, so send it back to bot host
     # add user and response pair in chat_history
@@ -945,3 +977,4 @@ if __name__ == '__main__':
         for mp in mps:
             mp.terminate()
         logging.info("Shutting down master")
+
