@@ -206,7 +206,6 @@ class ModelClient():
         if model_name == ModelID.DRQA:
             logging.info("Initializing DRQA")
             self.model = DRQA_Wrapper('', '', ModelID.DRQA)
-            self.estimate = True  # sampled according to score when user asked a question
         if model_name == ModelID.DUMB_QA:
             logging.info("Initializing DUMB QA")
             self.model = DumbQuestions_Wrapper(
@@ -329,55 +328,60 @@ class ModelClient():
                     self.is_running = False
 
             else:
-                # assumes the msg will contain keyword parameters
-                if 'chat_id' in msg:
-                    msg['user_id'] = msg['chat_id']
-                response, context = self.model.get_response(**msg)
-                ## if blank response, do not push it in the channel
-                if len(response) > 0:
-                    if len(context) > 0 and self.estimate:
-                        ## calculate NN estimation
-                        logging.info("Start feature calculation for model {}".format(self.model_name))
-                        feat = features.get(
-                            msg['article_text'], msg['all_context'] + [context[-1]],
-                            response, feature_list_short)
-                        # recall: `feature_list_short` & `feature_list_long` are the same
-                        logging.info("Done feature calculation for model {}".format(self.model_name))
-                        # Run approximator and save the score in packet
-                        logging.info("Scoring the candidate response for model {}".format(self.model_name))
-                        # Get the input vector to the estimators from the feature instances lise:
-                        candidate_vector = np.concatenate([feat[idx].feat for idx in range(len(feature_list_short))])
-                        input_dim = len(candidate_vector)
-                        candidate_vector = candidate_vector.reshape(1, input_dim) # make an array of shape (1, input)
-                        # Get predictions for this candidate response:
-                        with self.sess_short.as_default():
-                            with self.model_graph_short.as_default():
-                                logging.info("estimator short predicting")
-                                # get predicted class (0: downvote, 1: upvote), and confidence (ie: proba of upvote)
-                                vote, conf = self.estimator_short.predict(SHORT_TERM_MODE, candidate_vector)
-                                assert len(vote) == len(conf) == 1  # sanity check with batch size of 1
-                        with self.sess_long.as_default():
-                            with self.model_graph_long.as_default():
-                                logging.info("estimator long prediction")
-                                # get the predicted end-of-dialogue score:
-                                pred, _ = self.estimator_long.predict(LONG_TERM_MODE, candidate_vector)
-                                assert len(pred) == 1  # sanity check with batch size of 1
-                        vote = vote[0]  # 0 = downvote ; 1 = upvote
-                        conf = conf[0]  # 0.0 < Pr(upvote) < 1.0
-                        score = pred[0] # 1.0 < end-of-chat score < 5.0
-                    else:
-                        vote = -1
-                        conf = 0
-                        score = -1
+                try:
+                    # assumes the msg will contain keyword parameters
+                    if 'chat_id' in msg:
+                        msg['user_id'] = msg['chat_id']
+                    response, context = self.model.get_response(**msg)
+                    ## if blank response, do not push it in the channel
+                    if len(response) > 0:
+                        if len(context) > 0 and self.estimate:
+                            ## calculate NN estimation
+                            logging.info("Start feature calculation for model {}".format(self.model_name))
+                            feat = features.get(
+                                msg['article_text'], msg['all_context'] + [context[-1]],
+                                response, feature_list_short)
+                            # recall: `feature_list_short` & `feature_list_long` are the same
+                            logging.info("Done feature calculation for model {}".format(self.model_name))
+                            # Run approximator and save the score in packet
+                            logging.info("Scoring the candidate response for model {}".format(self.model_name))
+                            # Get the input vector to the estimators from the feature instances lise:
+                            candidate_vector = np.concatenate([feat[idx].feat for idx in range(len(feature_list_short))])
+                            input_dim = len(candidate_vector)
+                            candidate_vector = candidate_vector.reshape(1, input_dim) # make an array of shape (1, input)
+                            # Get predictions for this candidate response:
+                            with self.sess_short.as_default():
+                                with self.model_graph_short.as_default():
+                                    logging.info("estimator short predicting")
+                                    # get predicted class (0: downvote, 1: upvote), and confidence (ie: proba of upvote)
+                                    vote, conf = self.estimator_short.predict(SHORT_TERM_MODE, candidate_vector)
+                                    assert len(vote) == len(conf) == 1  # sanity check with batch size of 1
+                            with self.sess_long.as_default():
+                                with self.model_graph_long.as_default():
+                                    logging.info("estimator long prediction")
+                                    # get the predicted end-of-dialogue score:
+                                    pred, _ = self.estimator_long.predict(LONG_TERM_MODE, candidate_vector)
+                                    assert len(pred) == 1  # sanity check with batch size of 1
+                            vote = vote[0]  # 0 = downvote ; 1 = upvote
+                            conf = conf[0]  # 0.0 < Pr(upvote) < 1.0
+                            score = pred[0] # 1.0 < end-of-chat score < 5.0
+                        else:
+                            vote = -1
+                            conf = 0
+                            score = -1
 
-                    resp_msg = {'text': response, 'context': context,
-                                'model_name': self.model_name,
-                                'chat_id': msg['chat_id'],
-                                'chat_unique_id': msg['chat_unique_id'],
-                                'vote': str(vote),
-                                'conf': str(conf),
-                                'score': str(score)}
-                    self.queue.put(resp_msg)
+                        resp_msg = {'text': response, 'context': context,
+                                    'model_name': self.model_name,
+                                    'chat_id': msg['chat_id'],
+                                    'chat_unique_id': msg['chat_unique_id'],
+                                    'vote': str(vote),
+                                    'conf': str(conf),
+                                    'score': str(score)}
+                        self.queue.put(resp_msg)
+                except Exception as e:
+                    logging.error(e)
+                    # shutdown process
+                    self.shutdown()
 
     def run(self):
         """Fire off the client"""
@@ -399,10 +403,14 @@ class ModelClient():
                 time.sleep(10)
             logging.info("Exiting {} client".format(self.model_name))
         except (KeyboardInterrupt, SystemExit):
-            logging.info("Cleaning tf variables")
-            self.sess_short.close()
-            self.sess_long.close()
-            logging.info("Shutting down {} client".format(self.model_name))
+           self.shutdown() 
+
+    def shutdown(self):
+        """Clean shutdown process"""
+        logging.info("Shutting down {} client".format(self.model_name))
+        self.sess_short.close()
+        self.sess_long.close()
+        sys.exit(0)
 
 
 # Initialize variables
@@ -619,6 +627,8 @@ def ranker(chat_unique_id):
     consider_models = [] # array containing tuple of (model_name, rank_score) for 1
     dont_consider_models = [] # for 0
     all_models = [] # for debugging purpose
+    always_consider = [ModelID.HRED_REDDIT, ModelID.HRED_TWITTER,
+            ModelID.DUAL_ENCODER, ModelID.ALICEBOT, ModelID.FACT_GEN]
     logging.info("Ranking among models")
     for model, response in model_responses[chat_unique_id].iteritems():
         conf = float(response['conf'])
@@ -627,8 +637,8 @@ def ranker(chat_unique_id):
         logging.info("{} - {} - {}".format(model, conf, score))
         if conf > 0.75:
             rank_score = conf * score
-            # NQG and HUMAN_IMITATOR are usually overrated, don't select them right away
-            if model != ModelID.NQG and model != ModelID.HUMAN_IMITATOR:
+            # only consider these models
+            if model in always_consider:
                 consider_models.append((model, rank_score))
         if conf < 0.25 and conf != 0:
             rank_score = conf * score
@@ -678,7 +688,7 @@ def get_response(chat_id, text, context, allowed_model=None):
         article_nlp = nlp(unicode(text))
         # save all nouns from the article
         article_nouns[chat_id] = [
-            p.text for p in article_nlp if p.pos_ == 'NOUN'
+            p.lemma_ for p in article_nlp if p.pos_ in ['NOUN', 'PROPN']
         ]
 
         # initialize bored count to 0 for this new chat
@@ -766,6 +776,7 @@ def get_response(chat_id, text, context, allowed_model=None):
         wait_for -= 1
         time.sleep(1)
 
+    logging.info("Received responses from {}".format(model_responses[chat_unique_id].keys()))
     # got the responses, now choose which one to send.
     if is_start:
         # TODO: replace this with a proper choice / always NQG?
@@ -786,7 +797,8 @@ def get_response(chat_id, text, context, allowed_model=None):
             # if text contains emoji's, strip them
             text, emojis = strip_emojis(text)
             # check if the text contains wh words
-            nt_words = word_tokenize(text.lower())
+            ntext = nlp(unicode(text))
+            nt_words = [p.lemma_ for p in ntext]
             has_wh_word = False
             for word in nt_words:
                 if word in set(conf.wh_words):
@@ -814,7 +826,7 @@ def get_response(chat_id, text, context, allowed_model=None):
                     and "?" in set(nt_words)):
                 # get list of common nouns between article and question
                 common = list(set(article_nouns[chat_id]).intersection(
-                    set(text.split(' '))))
+                    set(nt_words)))
                 logging.info('Common nouns between question and article: {}'.format(common))
                 # if there is a common noun between question and article
                 # select DrQA
@@ -832,64 +844,67 @@ def get_response(chat_id, text, context, allowed_model=None):
             for model,score in dont_consider:
                 del model_responses[chat_unique_id][model] # remove the models from futher consideration
 
-        if best_model:
+        # Bored model selection
+        nt_sent = nlp(unicode(text))
+        nt_words = [p.lemma_ for p in nt_sent]
+        # check if user said only generic words:
+        generic_turn = True
+        for word in nt_words:
+            if word not in generic_words_list:
+                generic_turn = False
+                break
+        # if text contains 2 words or less, add 1 to the bored count
+        # also consider the case when the user says only generic things
+        if len(text.strip().split()) <= 2 or generic_turn:
+            boring_count[chat_id] += 1
+        # list of available models to use if bored
+        bored_models = [ModelID.NQG, ModelID.FACT_GEN, ModelID.CAND_QA, ModelID.HUMAN_IMITATOR]
+        boring_avl = list(set(model_responses[chat_unique_id]).intersection(set(bored_models)))
+        # if user is bored, change the topic by asking a question
+        # (only if that question is not asked before)
+        if boring_count[chat_id] >= BORED_COUNT and len(boring_avl) > 0:
+            # assign model selection probability based on estimator confidence
+            confs = [float(model_responses[chat_unique_id][model]['conf']) for model in boring_avl]
+            norm_confs = confs / np.sum(confs)
+            selection = np.random.choice(boring_avl, 1, p=norm_confs)[0]
+            response = model_responses[chat_unique_id][selection]
+            response['policyID'] = Policy.BORED
+            boring_count[chat_id] = 0  # reset bored count to 0
+
+        ## If not bored, then select from best model
+        elif best_model:
             response = model_responses[chat_unique_id][best_model]
             response['policyID'] = Policy.LEARNED
         else:
-            # fallback to optimal policy
-            nt_words = word_tokenize(text.lower())
-            # check if user said only generic words:
-            generic_turn = True
+            # Sample from the other models based on confidence probability
+            # TODO: have choice of probability. Given the past model usage,
+            # if HRED_TWITTER or HRED_REDDIT is used, then decay the
+            # probability by small amount
+            # randomly decide a model to query to get a response:
+            models = [ModelID.HRED_REDDIT, ModelID.HRED_TWITTER,
+                      ModelID.DUAL_ENCODER, ModelID.ALICEBOT]
+            has_wh_word = False
             for word in nt_words:
-                if word not in generic_words_list:
-                    generic_turn = False
+                if word in set(conf.wh_words):
+                    has_wh_word = True
                     break
-            # if text contains 2 words or less, add 1 to the bored count
-            # also consider the case when the user says only generic things
-            if len(text.strip().split()) <= 2 or generic_turn:
-                boring_count[chat_id] += 1
-            # list of available models to use if bored
-            bored_models = [ModelID.NQG, ModelID.FACT_GEN, ModelID.CAND_QA, ModelID.HUMAN_IMITATOR]
-            boring_avl = list(set(model_responses[chat_unique_id]).intersection(set(bored_models)))
-            # if user is bored, change the topic by asking a question
-            # (only if that question is not asked before)
-            if boring_count[chat_id] >= BORED_COUNT and len(boring_avl) > 0:
-                # assign model selection probability based on estimator confidence
-                confs = [float(model_responses[chat_unique_id][model]['conf']) for model in boring_avl]
-                norm_confs = confs / np.sum(confs)
-                selection = np.random.choice(boring_avl, 1, p=norm_confs)
-                response = model_responses[chat_unique_id][selection]
-                response['policyID'] = Policy.BORED
-                boring_count[chat_id] = 0  # reset bored count to 0
+            if has_wh_word or ("which" in set(nt_words)
+                and "?" in set(nt_words)):
+                # if the user asked a question, also consider DrQA
+                models.append(ModelID.DRQA)
             else:
-                # TODO: have choice of probability. Given the past model usage,
-                # if HRED_TWITTER or HRED_REDDIT is used, then decay the
-                # probability by small amount
-                # randomly decide a model to query to get a response:
-                models = [ModelID.HRED_REDDIT, ModelID.HRED_TWITTER,
-                          ModelID.DUAL_ENCODER, ModelID.ALICEBOT]
-                has_wh_word = False
-                for word in nt_words:
-                    if word in set(conf.wh_words):
-                        has_wh_word = True
-                        break
-                if has_wh_word or ("which" in set(nt_words)
-                    and "?" in set(nt_words)):
-                    # if the user asked a question, also consider DrQA
-                    models.append(ModelID.DRQA)
-                else:
-                    # if the user didn't ask a question, also consider models
-                    # that ask questions: hred-qa, nqg, and cand_qa
-                    models.extend([ModelID.NQG, ModelID.CAND_QA])
+                # if the user didn't ask a question, also consider models
+                # that ask questions: hred-qa, nqg, and cand_qa
+                models.extend([ModelID.NQG, ModelID.CAND_QA])
 
-                available_models = list(set(model_responses[chat_unique_id]).intersection(models))
-                if len(available_models) > 0:
-                    # assign model selection probability based on estimator confidence
-                    confs = [float(model_responses[chat_unique_id][model]['conf']) for model in available_models]
-                    norm_confs = confs / np.sum(confs)
-                    chosen_model = np.random.choice(available_models, 1, p=norm_confs)
-                    response = model_responses[chat_unique_id][chosen_model[0]]
-                    response['policyID'] = Policy.OPTIMAL
+            available_models = list(set(model_responses[chat_unique_id]).intersection(models))
+            if len(available_models) > 0:
+                # assign model selection probability based on estimator confidence
+                confs = [float(model_responses[chat_unique_id][model]['conf']) for model in available_models]
+                norm_confs = confs / np.sum(confs)
+                chosen_model = np.random.choice(available_models, 1, p=norm_confs)
+                response = model_responses[chat_unique_id][chosen_model[0]]
+                response['policyID'] = Policy.OPTIMAL
 
     # if still no response, then just send a random fact
     if not response or 'text' not in response:
@@ -949,7 +964,7 @@ if __name__ == '__main__':
 
     try:
         while True:
-            time.sleep(1)
+            time.sleep(10)
             dm = dead_models()
             if not all_awake and isEveryoneAwake():
                 logging.info("====================================")

@@ -6,6 +6,8 @@ Do you know <person> in person?
 What do you think about <org> ?
 Have you ever used any of <org>’s products or services ?
 Do you think you would like to work for <org> ?
+What do you know about <org> ?
+<org>, do you know what it is?
 <gpe> seems like a nice place!
 Have you been to <gpe>?
 I have never been to <gpe>.
@@ -24,6 +26,5 @@ Do you know how to speak <language> ?
 Do you know what happened in <date>?
 What happened in <date>?
 What are the <norp> saying?
-
 
 

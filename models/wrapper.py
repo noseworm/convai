@@ -278,7 +278,7 @@ class Human_Imitator_Wrapper(Dual_Encoder_Wrapper):
         context.append(text)
         logging.info('Using context: %s' % ' '.join(list(context)))
 
-        response_set_str  = self.cached_retrieved_data['r']]
+        response_set_str  = self.cached_retrieved_data['r']
         response_set_embs = self.cached_retrieved_data['r_embs']
 
         cached_retrieved_data = self.model.retrieve(
@@ -354,12 +354,14 @@ class CandidateQuestions_Wrapper(Model_Wrapper):
         self.canned_questions = ["That's a short article, don't you think? Not sure what's it about.",
                                  "Apparently I am too dumb for this article. What's it about?"]
         self.models = {}
+        self.canned_freq_user = {}   # Only allow one canned response per user
 
     def preprocess(self, chat_id='', article_text='', **kwargs):
         logging.info("Preprocessing CandidateQuestions")
         assert isinstance(article_text, basestring)
         self.models[chat_id] = CandidateQuestions(
             article_text, self.dict_fname)
+        self.canned_freq_user[chat_id] = 0
 
     def _get_sentences(self, context):
         sents = [re.sub('<[^>]+>', '', p) for p in context]
@@ -381,9 +383,10 @@ class CandidateQuestions_Wrapper(Model_Wrapper):
 
         if chat_id in self.models:
             response = self.models[chat_id].get_response()
-            if len(response) < 1:
+            if len(response) < 1 and self.canned_freq_user[chat_id] < 1:
                 # select canned response
                 response = random.choice(self.canned_questions)
+                self.canned_freq_user[chat_id] += 1
         else:
             response = 'What is this article about?'  # default
         context.append(self._format_to_model(response, len(context)))
@@ -500,6 +503,12 @@ class NQG_Wrapper(Model_Wrapper):
             for item in self.questions[chat_id]:
                 item.update({"used": 0})
             logging.info('Preprocessed article')
+            # pruning bad examples
+            rm_index = []
+            for i,preds in enumerate(self.questions[chat_id]):
+                if 'source: source:' in preds['pred']:
+                    rm_index.append(i)
+            self.questions[chat_id] = [qs for i,qs in self.questions[chat_id] if i not in set(rm_index)]
             self.questions[chat_id].sort(key=lambda x:  x["score"])
         except Exception as e:
             logging.info('Error in NQG article fetching')
@@ -602,10 +611,12 @@ class Topic_Wrapper(Model_Wrapper):
     def get_response(self, user_id='', text='', context=None, article=None, **kwargs):
         logging.info('---------------------------------')
         logging.info('Generating topic for the article')
+        logging.info('Topics : {}'.format(self.predicted))
+        logging.info('isMatch : {}'.format(self.isMatch(text)))
         if len(self.predicted) > 0 and self.isMatch(text):
             topic = self.predicted[0][0] # give back the top topic
             topic_phrase_index = random.choice(range(len(self.topic_phrases)))
-            response = self.topic_phrases[fact_phrase_index].replace("<topic>", topic)
+            response = self.topic_phrases[topic_phrase_index].replace("<topic>", topic)
         else:
             response = ''
         context.append(self._format_to_model(response, len(context)))
@@ -732,6 +743,13 @@ class AliceBot_Wrapper(Model_Wrapper):
         response = ''
         try:
             response = self.aliceBot.compute_responses(clean_context, None)
+            # prune response for presence of Alexa, Socialbot or MILA
+            if 'Alexa' in response:
+                response.replace('Alexa','Botty')
+            if 'Socialbot' in response:
+                response.replace('Socialbot','Convbot')
+            if 'MILA' in response:
+                response.replace('MILA','Hogwarts')
         except Exception as e:
             logging.error("Error generating alicebot response")
         context.append(self._format_to_model(response, len(context)))
