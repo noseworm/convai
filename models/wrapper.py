@@ -701,7 +701,8 @@ class FactGenerator_Wrapper(Model_Wrapper):
     def get_response(self, user_id='', text='', context=None, **kwargs):
         context.append(text)
         if len(context) > 0:
-            dialogue_history_embedding, is_valid_embedding = self.get_utterance_embedding(' '.join(context))
+            dialogue_history_flattened = ' '.join(context).lower()
+            dialogue_history_embedding, is_valid_embedding = self.get_utterance_embedding(dialogue_history_flattened)
             last_user_utterance_lower = context[-1].replace("'", " ").replace("\"", " ").replace(".", " ").replace("!", " ").replace("?", " ").replace(",", " ").lower().split()
             last_user_utterance_has_wh_word = False
             for word in last_user_utterance_lower:
@@ -710,14 +711,14 @@ class FactGenerator_Wrapper(Model_Wrapper):
                     break
             scores = np.dot(self.all_facts_embeddings, dialogue_history_embedding.T)
             facts_indices_sorted = scores.argsort()[::-1]
-            dialogue_history_flattened = ' '.join(context).lower()
             for fact_index in facts_indices_sorted:
                 fact = self.all_facts[fact_index]
-                if not fact.lower() in dialogue_history_flattened:
-                    fact_phrase_index = random.choice(range(len(self.fact_phrases)))
-                    fact_text = self.fact_phrases[fact_phrase_index].replace("<fact>",fact)
+                if fact.lower() not in dialogue_history_flattened:
                     if last_user_utterance_has_wh_word:
                         fact_text = random.choice(self.wh_prefix_phrases) + ' ' + fact_text
+                    else:
+                        fact_phrase_index = random.choice(range(len(self.fact_phrases)))
+                        fact_text = self.fact_phrases[fact_phrase_index].replace("<fact>",fact)
                     context.append(self._format_to_model(fact_text, len(context)))
                     return fact_text, context
 
