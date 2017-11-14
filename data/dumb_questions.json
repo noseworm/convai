@@ -1,1 +1,19 @@
-{"good\\s*(thank|thanks)*\\,*\\s*(and)?\\s+(you|u)\\s*(\\?)*": ["I am doing well thank you. This article seems nice, what do you think ?"], "who\\s(are|r|'re)\\s(you|u)(\\s?)(\\?)?": ["I am a chat bot developed by students from the Reasoning and Learning Lab at McGill university, Canada", "I am whoever you want me to be ;)"], "who\\s(made)\\s(you|u)(\\s?)(\\?)?": ["I am a chat bot developed by students from the Reasoning and Learning Lab at McGill university, Canada"],"^(hel+o+$)|^(he+y+$)|^(yo+$)|^(hi+$)|^(good\\smorning+$)": ["good day to you! how are you?", "hello! how are you?"], "what\\s*(is|'?s)\\s(your|ur)\\sname\\s*(\\?)*": ["My name is RLLConvaiBot"], "(.)*bye(.)*": ["It was nice chatting with you! talk to you soon, good bye. Also immediately send \u201c/end\u201d to finish the conversation"], "where\\sdo\\s(you|u)\\slive\\s?(\\?)*": ["I live at McGill university, Canada, although I am currently visiting Russia!", "I can live everywhere at anytime"]}
+{
+    "good\\s*(thank|thanks)*\\,*\\s*(and)?\\s+(you|u)\\s*(\\?)*":
+        ["I am doing well thank you. This article seems nice, what do you think ?"],
+    "(who|what)\\s(are|r|'re)\\s(you|u)(\\s?)(\\?)?":
+        ["I am a chat bot developed by students from the Reasoning and Learning Lab at McGill university, Canada",
+         "I am whoever you want me to be ;)"],
+    "who\\s(made)\\s(you|u)(\\s?)(\\?)?":
+        ["I am a chat bot developed by students from the Reasoning and Learning Lab at McGill university, Canada"],
+    "^(hel+o+$)|^(he+y+$)|^(yo+$)|^(hi+$)|^(good\\smorning+$)":
+        ["good day to you! how are you?",
+        "hello! how are you?"],
+    "what\\s*(is|'?s)\\s(your|ur)\\sname\\s*(\\?)*":
+        ["My name is RLLConvaiBot"],
+    "(.)*bye(.)*":
+        ["It was nice chatting with you! talk to you soon, good bye. Also immediately send \u201c/end\u201d to finish the conversation"],
+    "where\\sdo\\s(you|u)\\slive\\s?(\\?)*":
+        ["I live at McGill university, Canada, although I am currently visiting Russia!",
+        "I can live everywhere at anytime"]
+}
