@@ -466,7 +466,6 @@ class DRQA_Wrapper(Model_Wrapper):
         if len(article) == 0:
             logging.info("DRQA taking saved article")
             article = self.articles[user_id]
-        logging.info("DRQA : article {}".format(article))
         try:
             res = requests.post(DRQA_ENDURL+'/ask',
                                 json={'article': article, 'question': text})
