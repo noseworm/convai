@@ -579,8 +579,11 @@ def consumer():
             if msg['control'] == 'clean':
                 clean(msg['chat_id'])
         else:
-            get_response(msg['chat_id'], msg['text'],
-                         msg['context'], msg['allowed_model'])
+            # Spawn the response generation in new thread
+            gthread = Thread(target=get_response, args=[msg['chat_id'], msg['text'],
+                         msg['context'], msg['allowed_model']])
+            gthread.daemon = True
+            gthread.start()
 
 
 def producer():
