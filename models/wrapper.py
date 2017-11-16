@@ -446,7 +446,6 @@ class DRQA_Wrapper(Model_Wrapper):
 
     def preprocess(self, chat_id='', article_text='', **kwargs):
         logging.info("Saving the article for this chat state")
-        logging.info("Saving : {}".format(article_text))
         self.articles[chat_id] = article_text
 
     # return the key which matches
@@ -714,11 +713,10 @@ class FactGenerator_Wrapper(Model_Wrapper):
             for fact_index in facts_indices_sorted:
                 fact = self.all_facts[fact_index]
                 if fact.lower() not in dialogue_history_flattened:
+                    fact_phrase_index = random.choice(range(len(self.fact_phrases)))
+                    fact_text = self.fact_phrases[fact_phrase_index].replace("<fact>", fact)
                     if last_user_utterance_has_wh_word:
                         fact_text = random.choice(self.wh_prefix_phrases) + ' ' + fact_text
-                    else:
-                        fact_phrase_index = random.choice(range(len(self.fact_phrases)))
-                        fact_text = self.fact_phrases[fact_phrase_index].replace("<fact>",fact)
                     context.append(self._format_to_model(fact_text, len(context)))
                     return fact_text, context
 
