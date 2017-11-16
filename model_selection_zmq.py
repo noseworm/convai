@@ -463,7 +463,7 @@ modelIds = [
     ModelID.TOPIC,         # return article topic
     ModelID.FACT_GEN,      # return a fact based on conversation history
     ModelID.ALICEBOT,      # give all responsabilities to A.L.I.C.E. ...
-    ModelID.DUAL_ENCODER,  # return a reddit turn
+    # ModelID.DUAL_ENCODER,  # return a reddit turn
     ModelID.HUMAN_IMITATOR  # return a human turn from convai round1
 ]
 # modelIds = [ModelID.TOPIC]
