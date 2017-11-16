@@ -649,7 +649,7 @@ def ranker(chat_unique_id):
     dont_consider_models = []  # for 0
     all_models = []  # for debugging purpose
     always_consider = [ModelID.HRED_REDDIT, ModelID.HRED_TWITTER,
-                       ModelID.DUAL_ENCODER, ModelID.ALICEBOT, ModelID.FACT_GEN]
+                       ModelID.DUAL_ENCODER, ModelID.ALICEBOT]
     logging.info("Ranking among models")
     for model, response in model_responses[chat_unique_id].iteritems():
         conf = float(response['conf'])
@@ -875,6 +875,13 @@ def get_response(chat_id, text, context, allowed_model=None):
                 # remove the models from futher consideration
                 del model_responses[chat_unique_id][model]
 
+        # Reduce confidence of CAND_QA
+        if ModelID.CAND_QA in model_responses[chat_unique_id]:
+            cres = model_responses[chat_unique_id][ModelID.CAND_QA]
+            cres_conf = float(cres['conf'])
+            cres['conf'] = str(cres_conf / 2) # half the confidence
+            model_responses[chat_unique_id][ModelID.CAND_QA] = cres
+
         # Bored model selection
         nt_sent = nlp(unicode(text))
         nt_words = [p.lemma_ for p in nt_sent]
@@ -1029,6 +1036,6 @@ if __name__ == '__main__':
     except (KeyboardInterrupt, SystemExit):
         logging.info("Sending shutdown signal to all models")
         stop_models()
-        for mp in mps:
-            mp.terminate()
+        for model in modelIds:
+            process_manager[model].terminate()
         logging.info("Shutting down master")
