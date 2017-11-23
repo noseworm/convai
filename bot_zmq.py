@@ -207,7 +207,7 @@ def consumer():
                 msg_count = 0
         else:
             # only store the last MAX_CONTEXT in the array
-            bot.ai[msg['chat_id']]['context'] = msg['context'][:-MAX_CONTEXT]
+            # bot.ai[msg['chat_id']]['context'] = msg['context'][:-MAX_CONTEXT]
             outgoing_msg_queue.put(msg)
 
 
@@ -272,6 +272,8 @@ def reply_sender():
             text = msg['text']
             model_name = msg['model_name']
             policyID = msg['policyID']
+            if 'context' in msg:
+                bot.ai[chat_id]['context'] = msg['context'][-MAX_CONTEXT:]
 
             if text.strip() == '':
                 logging.info("Decided to respond with random emoji")
@@ -339,7 +341,7 @@ if __name__ == '__main__':
     3. Consumer thread. model_selection -> bot
     4. Reply thread. bot -> Telegram
     """
-    MODE = 'test'
+    MODE = 'production' # can be 'test' or anything else
     response_receiver_thread = Thread(target=response_receiver, args=(True,))
     response_receiver_thread.daemon = True
     response_receiver_thread.start()
