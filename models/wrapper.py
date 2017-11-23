@@ -123,7 +123,7 @@ class HRED_Wrapper(Model_Wrapper):
         logging.info('Generating HRED response for user %s.' % user_id)
         text = self._format_to_model(text, len(context))
         context.append(text)
-        logging.info('Using context: %s' % ' '.join(list(context)))
+        logging.info('Using context: %s' % ' , '.join(list(context)))
 
         samples, costs = self.sampler.sample(
             [' '.join(list(context))],
@@ -461,20 +461,24 @@ class DRQA_Wrapper(Model_Wrapper):
         ctext = self._format_to_model(text, len(context))
         context.append(ctext)
         response = ''
+        article_present = False
+        if user_id in self.articles:
+            article_present = True
         if not isinstance(article,basestring):
             article = str(article)
-        if len(article) == 0:
-            logging.info("DRQA taking saved article")
-            article = self.articles[user_id]
-        try:
-            res = requests.post(DRQA_ENDURL+'/ask',
-                                json={'article': article, 'question': text})
-            res_data = res.json()
-            response = res_data['reply']['text']
-        except Exception as e:
-            print e
-            logging.error(e)
-        context.append(self._format_to_model(response, len(context)))
+        if article_present:
+            if len(article) == 0:
+                logging.info("DRQA taking saved article, only if present")
+                article = self.articles[user_id]
+            try:
+                res = requests.post(DRQA_ENDURL+'/ask',
+                                    json={'article': article, 'question': text})
+                res_data = res.json()
+                response = res_data['reply']['text']
+            except Exception as e:
+                print e
+                logging.error(e)
+            context.append(self._format_to_model(response, len(context)))
         return response, context
 
 
@@ -485,6 +489,7 @@ class NQG_Wrapper(Model_Wrapper):
     def __init__(self, model_prefix, dict_fname, name):
         super(NQG_Wrapper, self).__init__(model_prefix, name)
         self.questions = {}
+        self.seen_user = []
 
     def preprocess(self, chat_id='', article_text='', **kwargs):
         # extract all sentences from the article
@@ -498,14 +503,21 @@ class NQG_Wrapper(Model_Wrapper):
             res = requests.post(NQG_ENDURL, json={'sents': sentences})
             res_data = res.json()
             self.questions[chat_id] = res_data
-            for item in self.questions[chat_id]:
-                item.update({"used": 0})
+            # remove duplicate questions
+            all_preds = []
+            rm_index = []
+            for indx, item in enumerate(self.questions[chat_id]):
+                item.update({'used':0})
+                if item['pred'] not in all_preds:
+                    all_preds.append(item['pred'])
+                else:
+                    rm_index.append(indx)
             logging.info('Preprocessed article')
             # pruning bad examples
-            rm_index = []
             for i,preds in enumerate(self.questions[chat_id]):
                 if 'source: source:' in preds['pred']:
                     rm_index.append(i)
+            rm_index = list(set(rm_index))
             self.questions[chat_id] = [qs for i,qs in enumerate(self.questions[chat_id]) if i not in set(rm_index)]
             self.questions[chat_id].sort(key=lambda x:  x["score"])
         except Exception as e:
@@ -515,12 +527,19 @@ class NQG_Wrapper(Model_Wrapper):
     def get_response(self, user_id='', text='', context=None, article=None, **kwargs):
         logging.info('----------------------------------------')
         logging.info('Generating NQG question for user %s.' % user_id)
+        logging.info('Context')
+        logging.info(context)
         response = ''
         if len(self.questions) > 0:
+            logging.info("Available questions : ")
+            logging.info(self.questions[user_id])
             qs = [(i,q) for i,q in enumerate(self.questions[user_id]) if q['used'] == 0]
             if len(qs) > 0:
                 response = qs[0][1]['pred']
-                self.questions[user_id][qs[0][0]]['used'] += 1
+                if user_id in self.seen_user:
+                    self.questions[user_id][qs[0][0]]['used'] += 1
+                else:
+                    self.seen_user.append(user_id)
                 self.questions[user_id].sort(key=lambda x: x["used"])
 
         context.append(self._format_to_model(response, len(context)))
