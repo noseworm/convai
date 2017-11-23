@@ -2,7 +2,6 @@ import zmq
 import sys
 import config
 import random
-import copy
 import spacy
 import re
 import time
@@ -15,11 +14,11 @@ from ranker import features
 from ranker.estimators import Estimator, LONG_TERM_MODE, SHORT_TERM_MODE
 from Queue import Queue
 from threading import Thread
-from multiprocessing import Process, Pool
+from multiprocessing import Pool, Process
 import uuid
-from models.wrapper import HRED_Wrapper, Dual_Encoder_Wrapper, Human_Imitator_Wrapper, HREDQA_Wrapper,CandidateQuestions_Wrapper, DumbQuestions_Wrapper, DRQA_Wrapper, NQG_Wrapper,Echo_Wrapper, Topic_Wrapper, FactGenerator_Wrapper, AliceBot_Wrapper
+from models.wrapper import Dual_Encoder_Wrapper, Human_Imitator_Wrapper, HREDQA_Wrapper, CandidateQuestions_Wrapper, DumbQuestions_Wrapper, DRQA_Wrapper, NQG_Wrapper, Echo_Wrapper, Topic_Wrapper, FactGenerator_Wrapper, AliceBot_Wrapper
+from models.wrapper import HRED_Wrapper
 import logging
-from nltk.tokenize import word_tokenize
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(name)s.%(funcName)s +%(lineno)s: %(levelname)-8s [%(process)d] %(message)s',
@@ -39,7 +38,7 @@ conf = config.get_config()
 # N.B. `import zmq` **has to be** the first import.
 
 
-nlp = spacy.load('en')
+nlp = spacy.load('en', parser=False, entity=False)
 
 # Utils
 
@@ -104,7 +103,7 @@ WAIT_TIME = 7
 # PINGBACK
 # Check every time if the time now - time last pinged back of a model
 # is within PING_TIME. If not, revive
-PING_TIME = 15
+PING_TIME = 60
 
 # IPC pipes
 # Parent to models
@@ -122,11 +121,11 @@ PARENT_PULL_PIPE = 'ipc:///tmp/parent_pull.pipe'
 
 # short term estimator
 ranker_args_short = []
-with open(conf.ranker['model_short'],'rb') as fp:
+with open(conf.ranker['model_short'], 'rb') as fp:
     data_short, hidden_dims_short, hidden_dims_extra_short, activation_short, \
-      optimizer_short, learning_rate_short, \
-      model_path_short, model_id_short, model_name_short, _, _, _ \
-    = pkl.load(fp)
+        optimizer_short, learning_rate_short, \
+        model_path_short, model_id_short, model_name_short, _, _, _ \
+        = pkl.load(fp)
 # load the feature list used in short term ranker
 feature_list_short = data_short[-1]
 # reconstruct model_path just in case file have been moved:
@@ -139,9 +138,9 @@ logging.info(model_path_short)
 ranker_args_long = []
 with open(conf.ranker['model_long'], 'rb') as fp:
     data_long, hidden_dims_long, hidden_dims_extra_long, activation_long, \
-      optimizer_long, learning_rate_long, \
-      model_path_long, model_id_long, model_name_long, _, _, _ \
-    = pkl.load(fp)
+        optimizer_long, learning_rate_long, \
+        model_path_long, model_id_long, model_name_long, _, _, _ \
+        = pkl.load(fp)
 # load the feature list user in short term ranker
 feature_list_long = data_long[-1]
 # reconstruct model_path just in case file have been moved:
@@ -159,7 +158,6 @@ assert feature_list_short == feature_list_long
 # - learning_rate_short     & learning_rate_long
 
 
-
 class ModelClient():
     """
     Client Process for individual models. Initialize the model
@@ -167,7 +165,7 @@ class ModelClient():
     """
 
     def __init__(self, model_name, estimate=True):
-        #Process.__init__(self)
+        # Process.__init__(self)
         self.model_name = model_name
         self.estimate = estimate
         # select and initialize models
@@ -214,7 +212,8 @@ class ModelClient():
         if model_name == ModelID.NQG:
             logging.info("Initializing NQG")
             self.model = NQG_Wrapper('', '', ModelID.NQG)
-            self.estimate = True  # sampled according to score when user is bored or when user didn't ask a question
+            # sampled according to score when user is bored or when user didn't ask a question
+            self.estimate = True
         # if model_name == ModelID.ECHO:
         #     logging.info("Initializing Echo")
         #     self.model = Echo_Wrapper('', '', ModelID.ECHO)
@@ -224,22 +223,25 @@ class ModelClient():
             self.model = CandidateQuestions_Wrapper('',
                                                     conf.candidate['dict_file'],
                                                     ModelID.CAND_QA)
-            self.estimate = True  # sampled according to score when user is bored or when user didn't ask a question
+            # sampled according to score when user is bored or when user didn't ask a question
+            self.estimate = True
         if model_name == ModelID.TOPIC:
             logging.info("Initializing topic model")
-            self.model = Topic_Wrapper('', '', '',conf.topic['dir_name'],
-                    conf.topic['model_name'], conf.topic['top_k'])
+            self.model = Topic_Wrapper('', '', '', conf.topic['dir_name'],
+                                       conf.topic['model_name'], conf.topic['top_k'])
             self.estimate = False  # only used when user requested article topic
         if model_name == ModelID.FACT_GEN:
             logging.info("Initializing fact generator")
-            self.model = FactGenerator_Wrapper('','','')
+            self.model = FactGenerator_Wrapper('', '', '')
             self.estimate = True  # sampled according to score when user is bored
         if model_name == ModelID.ALICEBOT:
             logging.info("Initializing Alicebot")
-            self.model = AliceBot_Wrapper('','','')
+            self.model = AliceBot_Wrapper('', '', '')
             self.estimate = True  # always sampled according to score
         # message queue. This contains the responses generated by the model
         self.queue = Queue()
+        # process queue. This contains the responses to be processed
+        self.process_queue = Queue()
         self.is_running = True
         import tensorflow as tf
         logging.info("Building NN Ranker")
@@ -265,19 +267,23 @@ class ModelClient():
         logging.info("Init session")
         # Wrap ANY call to the rankers within those two sessions:
         self.sess_short = tf.Session(graph=self.model_graph_short)
-        self.sess_long  = tf.Session(graph=self.model_graph_long)
+        self.sess_long = tf.Session(graph=self.model_graph_long)
         logging.info("Done init session")
         # example: reload trained parameters
         logging.info("Loading trained params short")
         with self.sess_short.as_default():
             with self.model_graph_short.as_default():
-                self.estimator_short.load(self.sess_short, model_path_short, model_id_short, model_name_short)
+                self.estimator_short.load(
+                    self.sess_short, model_path_short, model_id_short, model_name_short)
         logging.info("Loading trained params long")
         with self.sess_long.as_default():
             with self.model_graph_long.as_default():
-                self.estimator_long.load(self.sess_long, model_path_long, model_id_long, model_name_long)
+                self.estimator_long.load(
+                    self.sess_long, model_path_long, model_id_long, model_name_long)
 
         logging.info("Done building NN")
+        self.discard_list = set()
+        self.done_process = set()
 
         self.warmup()
         self.run()
@@ -298,6 +304,11 @@ class ModelClient():
         logging.info("Model {} push channel active".format(self.model_name))
         while self.is_running:
             msg = self.queue.get()
+            if 'control' in msg and msg['control'] == 'ack':
+                pass
+            else:
+                logging.info("Sending back info")
+                logging.info(msg)
             socket.send_json(msg)
             self.queue.task_done()
 
@@ -322,6 +333,11 @@ class ModelClient():
                     if 'chat_id' in msg:
                         msg['user_id'] = msg['chat_id']
                     self.model.preprocess(**msg)
+                if msg['control'] == 'discard':
+                    if msg['chat_unique_id'] in self.done_process:
+                        self.done_process.discard(msg['chat_unique_id'])
+                    else:
+                        self.discard_list.add(msg['chat_unique_id'])
                 if msg['control'] == 'exit':
                     logging.info("Received exit signal, model {}"
                                  .format(self.model_name))
@@ -329,59 +345,90 @@ class ModelClient():
 
             else:
                 try:
-                    # assumes the msg will contain keyword parameters
-                    if 'chat_id' in msg:
-                        msg['user_id'] = msg['chat_id']
-                    response, context = self.model.get_response(**msg)
-                    ## if blank response, do not push it in the channel
-                    if len(response) > 0:
-                        if len(context) > 0 and self.estimate:
-                            ## calculate NN estimation
-                            logging.info("Start feature calculation for model {}".format(self.model_name))
-                            feat = features.get(
-                                msg['article_text'], msg['all_context'] + [context[-1]],
-                                response, feature_list_short)
-                            # recall: `feature_list_short` & `feature_list_long` are the same
-                            logging.info("Done feature calculation for model {}".format(self.model_name))
-                            # Run approximator and save the score in packet
-                            logging.info("Scoring the candidate response for model {}".format(self.model_name))
-                            # Get the input vector to the estimators from the feature instances lise:
-                            candidate_vector = np.concatenate([feat[idx].feat for idx in range(len(feature_list_short))])
-                            input_dim = len(candidate_vector)
-                            candidate_vector = candidate_vector.reshape(1, input_dim) # make an array of shape (1, input)
-                            # Get predictions for this candidate response:
-                            with self.sess_short.as_default():
-                                with self.model_graph_short.as_default():
-                                    logging.info("estimator short predicting")
-                                    # get predicted class (0: downvote, 1: upvote), and confidence (ie: proba of upvote)
-                                    vote, conf = self.estimator_short.predict(SHORT_TERM_MODE, candidate_vector)
-                                    assert len(vote) == len(conf) == 1  # sanity check with batch size of 1
-                            with self.sess_long.as_default():
-                                with self.model_graph_long.as_default():
-                                    logging.info("estimator long prediction")
-                                    # get the predicted end-of-dialogue score:
-                                    pred, _ = self.estimator_long.predict(LONG_TERM_MODE, candidate_vector)
-                                    assert len(pred) == 1  # sanity check with batch size of 1
-                            vote = vote[0]  # 0 = downvote ; 1 = upvote
-                            conf = conf[0]  # 0.0 < Pr(upvote) < 1.0
-                            score = pred[0] # 1.0 < end-of-chat score < 5.0
-                        else:
-                            vote = -1
-                            conf = 0
-                            score = -1
+                    self.process_queue.put({'msg': msg})
 
-                        resp_msg = {'text': response, 'context': context,
-                                    'model_name': self.model_name,
-                                    'chat_id': msg['chat_id'],
-                                    'chat_unique_id': msg['chat_unique_id'],
-                                    'vote': str(vote),
-                                    'conf': str(conf),
-                                    'score': str(score)}
-                        self.queue.put(resp_msg)
                 except Exception as e:
                     logging.error(e)
                     # shutdown process
                     self.shutdown()
+
+    def process(self):
+        """ Process the incoming msg and get a response
+        """
+        while(self.is_running):
+            proc_msg = self.process_queue.get()
+            msg = proc_msg['msg']
+            if 'chat_unique_id' not in msg:
+                self.process_queue.task_done()
+                continue
+            elif  msg['chat_unique_id'] not in self.discard_list:
+                if 'chat_id' in msg:
+                    msg['user_id'] = msg['chat_id']
+                    response, context = self.model.get_response(**msg)
+
+                # if blank response, do not push it in the channel
+                if len(response) > 0:
+                    if len(context) > 0 and self.estimate:
+                        # calculate NN estimation
+                        logging.info(
+                            "Start feature calculation for model {}".format(self.model_name))
+                        feat = features.get(
+                            msg['article_text'], msg['all_context'] +
+                            [context[-1]],
+                            response, feature_list_short)
+                        # recall: `feature_list_short` & `feature_list_long` are the same
+                        logging.info(
+                            "Done feature calculation for model {}".format(self.model_name))
+                        # Run approximator and save the score in packet
+                        logging.info(
+                            "Scoring the candidate response for model {}".format(self.model_name))
+                        # Get the input vector to the estimators from the feature instances lise:
+                        candidate_vector = np.concatenate(
+                            [feat[idx].feat for idx in range(len(feature_list_short))])
+                        input_dim = len(candidate_vector)
+                        candidate_vector = candidate_vector.reshape(
+                            1, input_dim)  # make an array of shape (1, input)
+                        # Get predictions for this candidate response:
+                        with self.sess_short.as_default():
+                            with self.model_graph_short.as_default():
+                                logging.info("estimator short predicting")
+                                # get predicted class (0: downvote, 1: upvote), and confidence (ie: proba of upvote)
+                                vote, conf = self.estimator_short.predict(
+                                    SHORT_TERM_MODE, candidate_vector)
+                                # sanity check with batch size of 1
+                                assert len(vote) == len(conf) == 1
+                        with self.sess_long.as_default():
+                            with self.model_graph_long.as_default():
+                                logging.info("estimator long prediction")
+                                # get the predicted end-of-dialogue score:
+                                pred, _ = self.estimator_long.predict(
+                                    LONG_TERM_MODE, candidate_vector)
+                                # sanity check with batch size of 1
+                                assert len(pred) == 1
+                        vote = vote[0]  # 0 = downvote ; 1 = upvote
+                        conf = conf[0]  # 0.0 < Pr(upvote) < 1.0
+                        score = pred[0]  # 1.0 < end-of-chat score < 5.0
+                    else:
+                        vote = -1
+                        conf = 0
+                        score = -1
+
+                    resp_msg = {'text': response, 'context': context,
+                                'model_name': self.model_name,
+                                'chat_id': msg['chat_id'],
+                                'chat_unique_id': msg['chat_unique_id'],
+                                'vote': str(vote),
+                                'conf': str(conf),
+                                'score': str(score)}
+                    self.queue.put(resp_msg)
+                    self.done_process.add(msg['chat_unique_id'])
+            else:
+                # discard
+                self.discard_list.discard(msg['chat_unique_id'])
+            self.process_queue.task_done()
+
+
+
 
     def run(self):
         """Fire off the client"""
@@ -397,13 +444,18 @@ class ModelClient():
             act_thread = Thread(target=self.act)
             act_thread.daemon = True
             act_thread.start()
+            logging.info("Starting {} process thread".format(self.model_name))
+            process_thread = Thread(target=self.process)
+            process_thread.daemon = True
+            process_thread.start()
             while self.is_running:
                 # Ping back to let parent know its alive
-                self.queue.put({'control':'ack', 'model_name': self.model_name})
+                self.queue.put(
+                    {'control': 'ack', 'model_name': self.model_name})
                 time.sleep(10)
             logging.info("Exiting {} client".format(self.model_name))
         except (KeyboardInterrupt, SystemExit):
-           self.shutdown() 
+            self.shutdown()
 
     def shutdown(self):
         """Clean shutdown process"""
@@ -424,7 +476,8 @@ boring_count = {}     # number of times the user responded with short answer
 job_queue = Queue()
 response_queue = Queue()
 model_responses = {}
-used_models = {}      # This dictionary should contain an array per chat_id on the history of used models
+# This dictionary should contain an array per chat_id on the history of used models
+used_models = {}
 
 # list of generic words to detect if user is bored
 generic_words_list = []
@@ -450,13 +503,13 @@ modelIds = [
     ModelID.TOPIC,         # return article topic
     ModelID.FACT_GEN,      # return a fact based on conversation history
     ModelID.ALICEBOT,      # give all responsabilities to A.L.I.C.E. ...
-    ModelID.DUAL_ENCODER,  # return a reddit turn
-    ModelID.HUMAN_IMITATOR # return a human turn from convai round1
+    # ModelID.DUAL_ENCODER,  # return a reddit turn
+    # ModelID.HUMAN_IMITATOR  # return a human turn from convai round1
 ]
 # modelIds = [ModelID.TOPIC]
 
 # last ack time, contains datetimes
-ack_times = {model:None for model in modelIds}
+ack_times = {model: None for model in modelIds}
 
 # TODO: make sure not used in other files before removing
 # dumb_qa_model = DumbQuestions_Wrapper('', conf.dumb['dict_file'], ModelID.DUMB_QA)
@@ -481,9 +534,9 @@ def stop_models():
 
 def submit_job(job_type='preprocess', to_model=ModelID.ALL,
                context=None, text='', chat_id='', chat_unique_id='',
-               article='',all_context=None):
+               article='', all_context=None):
     """ Submit Jobs to job queue, which will be consumed by the responder
-    :job_type = preprocess / get_response / exit
+    :job_type = preprocess / get_response / exit / discard
     :to_model = all / specific model name
     """
     topic = 'user_response'
@@ -495,12 +548,11 @@ def submit_job(job_type='preprocess', to_model=ModelID.ALL,
     if not context:
         context = []
     job = {'type': job_type, 'topic': topic, 'context': context,
-            'text': text, 'chat_id': chat_id, 'chat_unique_id': chat_unique_id,
-            'article_text': article,'all_context': all_context}
-    if job_type == 'preprocess' or job_type == 'exit':
+           'text': text, 'chat_id': chat_id, 'chat_unique_id': chat_unique_id,
+           'article_text': article, 'all_context': all_context}
+    if job_type == 'preprocess' or job_type == 'exit' or job_type == 'discard':
         job['control'] = job_type
 
-    print "Job : {}".format(json.dumps(job))
     job_queue.put(job)
 
 
@@ -519,12 +571,13 @@ def act():
             # received ack response
             ack_times[packet['model_name']] = datetime.now()
         elif packet['chat_unique_id'] in model_responses:
+            logging.info("Receiving model response")
+            logging.info(packet)
             # calculate the features here
             chat_id = packet['chat_id']
             context = packet['context']
-            logging.info("Calculating features for model {}".format(packet['model_name']))
-            # Context history is in chat_history[<chat_id>]
-            context_till_now = chat_history[chat_id] + [context[-1]]
+            logging.info("Calculating features for model {}".format(
+                packet['model_name']))
             # Now store the packet in dict
             model_responses[packet['chat_unique_id']
                             ][packet['model_name']] = packet
@@ -555,7 +608,7 @@ def consumer():
     is_running = True
     while is_running:
         msg = socket.recv_json()
-        if 'control' in msg:
+        if 'control' in msg and msg['control'] != 'test':
             if msg['control'] == 'exit':
                 logging.info("Received exit command. Closing all models")
                 stop_models()
@@ -565,8 +618,14 @@ def consumer():
             if msg['control'] == 'clean':
                 clean(msg['chat_id'])
         else:
-            get_response(msg['chat_id'], msg['text'],
-                         msg['context'], msg['allowed_model'])
+            # Spawn the response generation in new thread
+            control = 'none'
+            if 'control' in msg:
+                control = msg['control']
+            gthread = Thread(target=get_response, args=[msg['chat_id'], msg['text'],
+                         msg['context'], msg['allowed_model'], control])
+            gthread.daemon = True
+            gthread.start()
 
 
 def producer():
@@ -590,6 +649,8 @@ def clean(chat_id):
     # policy_mode = Policy.NONE  # TODO: make sure never used before removing
 
 # check the last ack time to determine if the model is dead
+
+
 def dead_models():
     dm = []
     now = datetime.now()
@@ -602,6 +663,8 @@ def dead_models():
     return dm
 
 # check if all models are up
+
+
 def isEveryoneAwake():
     for model in ack_times:
         if not ack_times[model]:
@@ -623,12 +686,15 @@ def strip_emojis(str):
 # return ModelID of the model to select, else None
 # also return a list of models to NOT consider, else None
 # which indicates to take the pre-calculated policy
+
+
 def ranker(chat_unique_id):
-    consider_models = [] # array containing tuple of (model_name, rank_score) for 1
-    dont_consider_models = [] # for 0
-    all_models = [] # for debugging purpose
+    # array containing tuple of (model_name, rank_score) for 1
+    consider_models = []
+    dont_consider_models = []  # for 0
+    all_models = []  # for debugging purpose
     always_consider = [ModelID.HRED_REDDIT, ModelID.HRED_TWITTER,
-            ModelID.DUAL_ENCODER, ModelID.ALICEBOT, ModelID.FACT_GEN]
+                       ModelID.DUAL_ENCODER, ModelID.ALICEBOT]
     logging.info("Ranking among models")
     for model, response in model_responses[chat_unique_id].iteritems():
         conf = float(response['conf'])
@@ -642,15 +708,16 @@ def ranker(chat_unique_id):
                 consider_models.append((model, rank_score))
         if conf < 0.25 and conf != 0:
             rank_score = conf * score
-            if model != ModelID.FACT_GEN: # keep fact generator model for failure handling case
+            if model != ModelID.FACT_GEN:  # keep fact generator model for failure handling case
                 dont_consider_models.append((model, rank_score))
         all_models.append((model, conf * score))
-    all_models = sorted(all_models, key=lambda x:x[1], reverse=True)
+    all_models = sorted(all_models, key=lambda x: x[1], reverse=True)
     logging.info(all_models)
     consider = None
     dont_consider = None
     if len(consider_models) > 0:
-        consider_models = sorted(consider_models, key=lambda x:x[1], reverse=True)
+        consider_models = sorted(
+            consider_models, key=lambda x: x[1], reverse=True)
         consider = consider_models[0][0]
     elif len(dont_consider_models) > 0:
         dont_consider = dont_consider_models
@@ -658,22 +725,26 @@ def ranker(chat_unique_id):
 
 # check if any of the current generated responses fall within k previous history
 # If so, remove that response altogether
+
+
 def no_duplicate(chat_id, chat_unique_id, k=5):
     del_models = []
     for model, response in model_responses[chat_unique_id].iteritems():
-        if response['text'] in set(chat_history[chat_id][-k:]):
+        if chat_id in chat_history and response['text'] in set(chat_history[chat_id][-k:]):
             del_models.append(model)
     for dm in del_models:
         del model_responses[chat_unique_id][dm]
 
 
-def get_response(chat_id, text, context, allowed_model=None):
+def get_response(chat_id, text, context, allowed_model=None, control=None):
     # create a chat_id + unique ID candidate responses field
     # chat_unique_id is needed to uniquely determine the return
     # for each call
     chat_unique_id = str(chat_id) + '_' + str(uuid.uuid4())
     model_responses[chat_unique_id] = {}
     is_start = False
+    logging.info("get_response context")
+    logging.info(context)
 
     # if text contains /start, don't add it to the context
     if '/start' in text:
@@ -726,13 +797,20 @@ def get_response(chat_id, text, context, allowed_model=None):
     else:
         # fire global query
         if not allowed_model or allowed_model == ModelID.ALL:
+            # for test mode only, article_text will not have chat_id
+            if control == 'test':
+                article = 'preset article'
+                all_context = []
+            else:
+                article = article_text[chat_id]
+                all_context = chat_history[chat_id]
             submit_job(job_type='get_response',
                        chat_id=chat_id,
                        chat_unique_id=chat_unique_id,
                        context=context,
                        text=text,
-                       article=article_text[chat_id],
-                       all_context=chat_history[chat_id])
+                       article=article,
+                       all_context=all_context)
         else:
             submit_job(job_type='get_response',
                        to_model=allowed_model,
@@ -773,19 +851,29 @@ def get_response(chat_id, text, context, allowed_model=None):
                 wait_for += 1
             # Wait for all the models to arrive - REDUNDANT
             elif len(set(model_responses[chat_unique_id].keys())
-                    .intersection(set(modelIds))) == len(modelIds):
+                     .intersection(set(modelIds))) == len(modelIds):
                 done_processing = True
                 break
         # tick
         wait_for -= 1
         time.sleep(1)
 
-    logging.info("Received responses from {}".format(model_responses[chat_unique_id].keys()))
+    logging.info("Received responses from {}".format(
+        model_responses[chat_unique_id].keys()))
+    if chat_id not in boring_count:
+        boring_count[chat_id] = 0
+    if chat_id not in chat_history:
+        chat_history[chat_id] = []
+    if chat_id not in used_models:
+        used_models[chat_id] = []
+    # instruct models to not further process
+    submit_job(job_type='discard', chat_id=chat_id, chat_unique_id=chat_unique_id)
+    
     # got the responses, now choose which one to send.
     if is_start:
         # TODO: replace this with a proper choice / always NQG?
         choices = list(set([ModelID.CAND_QA, ModelID.NQG])
-                .intersection(set(model_responses[chat_unique_id].keys())))
+                       .intersection(set(model_responses[chat_unique_id].keys())))
         if len(choices) > 0:
             selection = random.choice(choices)
             response = model_responses[chat_unique_id][selection]
@@ -827,11 +915,15 @@ def get_response(chat_id, text, context, allowed_model=None):
                 response['policyID'] = Policy.FIXED
             # if query is a question, try to reply with DrQA
             elif has_wh_word or ("which" in set(nt_words)
-                    and "?" in set(nt_words)):
+                                 and "?" in set(nt_words)):
                 # get list of common nouns between article and question
-                common = list(set(article_nouns[chat_id]).intersection(
-                    set(nt_words)))
-                logging.info('Common nouns between question and article: {}'.format(common))
+                if chat_id in article_nouns:
+                    common = list(set(article_nouns[chat_id]).intersection(
+                        set(nt_words)))
+                else:
+                    common = []
+                logging.info(
+                    'Common nouns between question and article: {}'.format(common))
                 # if there is a common noun between question and article
                 # select DrQA
                 if len(common) > 0 and ModelID.DRQA in model_responses[chat_unique_id]:
@@ -845,10 +937,18 @@ def get_response(chat_id, text, context, allowed_model=None):
         # Ranker based selection
         best_model, dont_consider = ranker(chat_unique_id)
         if dont_consider and len(dont_consider) > 0:
-            for model,score in dont_consider:
-                del model_responses[chat_unique_id][model] # remove the models from futher consideration
+            for model, score in dont_consider:
+                # remove the models from futher consideration
+                del model_responses[chat_unique_id][model]
 
-        # Bored model selection
+        # Reduce confidence of CAND_QA
+        if ModelID.CAND_QA in model_responses[chat_unique_id]:
+            cres = model_responses[chat_unique_id][ModelID.CAND_QA]
+            cres_conf = float(cres['conf'])
+            cres['conf'] = str(cres_conf / 2) # half the confidence
+            model_responses[chat_unique_id][ModelID.CAND_QA] = cres
+
+        # Bored model selection (TODO: nlp() might be taking time)
         nt_sent = nlp(unicode(text))
         nt_words = [p.lemma_ for p in nt_sent]
         # check if user said only generic words:
@@ -862,20 +962,23 @@ def get_response(chat_id, text, context, allowed_model=None):
         if len(text.strip().split()) <= 2 or generic_turn:
             boring_count[chat_id] += 1
         # list of available models to use if bored
-        bored_models = [ModelID.NQG, ModelID.FACT_GEN, ModelID.CAND_QA, ModelID.HUMAN_IMITATOR]
-        boring_avl = list(set(model_responses[chat_unique_id]).intersection(set(bored_models)))
+        bored_models = [ModelID.NQG, ModelID.FACT_GEN,
+                        ModelID.CAND_QA, ModelID.HUMAN_IMITATOR]
+        boring_avl = list(
+            set(model_responses[chat_unique_id]).intersection(set(bored_models)))
         # if user is bored, change the topic by asking a question
         # (only if that question is not asked before)
         if boring_count[chat_id] >= BORED_COUNT and len(boring_avl) > 0:
             # assign model selection probability based on estimator confidence
-            confs = [float(model_responses[chat_unique_id][model]['conf']) for model in boring_avl]
+            confs = [float(model_responses[chat_unique_id][model]['conf'])
+                     for model in boring_avl]
             norm_confs = confs / np.sum(confs)
             selection = np.random.choice(boring_avl, 1, p=norm_confs)[0]
             response = model_responses[chat_unique_id][selection]
             response['policyID'] = Policy.BORED
             boring_count[chat_id] = 0  # reset bored count to 0
 
-        ## If not bored, then select from best model
+        # If not bored, then select from best model
         elif best_model:
             response = model_responses[chat_unique_id][best_model]
             response['policyID'] = Policy.LEARNED
@@ -893,7 +996,7 @@ def get_response(chat_id, text, context, allowed_model=None):
                     has_wh_word = True
                     break
             if has_wh_word or ("which" in set(nt_words)
-                and "?" in set(nt_words)):
+                               and "?" in set(nt_words)):
                 # if the user asked a question, also consider DrQA
                 models.append(ModelID.DRQA)
             else:
@@ -901,12 +1004,15 @@ def get_response(chat_id, text, context, allowed_model=None):
                 # that ask questions: hred-qa, nqg, and cand_qa
                 models.extend([ModelID.NQG, ModelID.CAND_QA])
 
-            available_models = list(set(model_responses[chat_unique_id]).intersection(models))
+            available_models = list(
+                set(model_responses[chat_unique_id]).intersection(models))
             if len(available_models) > 0:
                 # assign model selection probability based on estimator confidence
-                confs = [float(model_responses[chat_unique_id][model]['conf']) for model in available_models]
+                confs = [float(model_responses[chat_unique_id][model]['conf'])
+                         for model in available_models]
                 norm_confs = confs / np.sum(confs)
-                chosen_model = np.random.choice(available_models, 1, p=norm_confs)
+                chosen_model = np.random.choice(
+                    available_models, 1, p=norm_confs)
                 response = model_responses[chat_unique_id][chosen_model[0]]
                 response['policyID'] = Policy.OPTIMAL
 
@@ -922,6 +1028,8 @@ def get_response(chat_id, text, context, allowed_model=None):
     chat_history[response['chat_id']].append(response['text'])
     used_models[chat_id].append(response['model_name'])
     # Again use ZMQ, because lulz
+    response['control'] = control
+    logging.info("Done selecting best model")
     response_queue.put(response)
     # clean the unique chat ID
     del model_responses[chat_unique_id]
@@ -936,13 +1044,13 @@ if __name__ == '__main__':
             5. Child models pull channel `act`
     """
     # 1. Initializing the models
-    mps = []
-    mp_pool = Pool(processes=len(modelIds))
+    process_manager = {}
     for model in modelIds:
-        #wx = ModelClient(model)
-        #mps.append(wx)
-        mp_pool.apply_async(ModelClient, args=(model,))
-    #for mp in mps:
+        # wx = ModelClient(model)
+        # mps.append(wx)
+        process_manager[model] = Process(target=ModelClient, args=(model,))
+        process_manager[model].start()
+    # for mp in mps:
     #    mp.start()
     # 2. Parent -> Bot publish channel
     child_publish_thread = Thread(target=responder)
@@ -968,7 +1076,6 @@ if __name__ == '__main__':
 
     try:
         while True:
-            time.sleep(10)
             dm = dead_models()
             if not all_awake and isEveryoneAwake():
                 logging.info("====================================")
@@ -982,19 +1089,21 @@ if __name__ == '__main__':
                 logging.info("=====================================")
                 all_awake = True
 
+            time.sleep(120)
             if len(dm) > 0:
                 for dead_m in dm:
                     logging.info("Reviving model {}".format(dead_m))
-                    mp_pool.apply_async(ModelClient, args=(dead_m,))
+                    process_manager[dead_m] = Process(
+                        target=ModelClient, args=(dead_m,))
+                    process_manager[dead_m].start()
         # doesn't matter to wait for join now?
-        mp_pool.close()
-        mp_pool.join()
-        #for mp in mps:
+        # mp_pool.close()
+        # mp_pool.join()
+        # for mp in mps:
         #    mp.join()
     except (KeyboardInterrupt, SystemExit):
         logging.info("Sending shutdown signal to all models")
         stop_models()
-        for mp in mps:
-            mp.terminate()
+        for model in modelIds:
+            process_manager[model].terminate()
         logging.info("Shutting down master")
-

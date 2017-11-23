@@ -99,6 +99,7 @@ class HRED_Wrapper(Model_Wrapper):
     """
     GENERIC GENERATIVE MODEL
     """
+
     def __init__(self, model_prefix, dict_file, name):
         # Load the HRED model.
         super(HRED_Wrapper, self).__init__(model_prefix, name)
@@ -123,7 +124,7 @@ class HRED_Wrapper(Model_Wrapper):
         logging.info('Generating HRED response for user %s.' % user_id)
         text = self._format_to_model(text, len(context))
         context.append(text)
-        logging.info('Using context: %s' % ' '.join(list(context)))
+        logging.info('Using context: %s' % ' , '.join(list(context)))
 
         samples, costs = self.sampler.sample(
             [' '.join(list(context))],
@@ -144,6 +145,7 @@ class Dual_Encoder_Wrapper(Model_Wrapper):
     """
     GENERIC RETRIEVER MODEL
     """
+
     def __init__(self, model_prefix, data_fname, dict_fname, name, n_resp=10000):
         super(Dual_Encoder_Wrapper, self).__init__(model_prefix, name)
 
@@ -268,8 +270,10 @@ class Human_Imitator_Wrapper(Dual_Encoder_Wrapper):
     RETRIEVE THE MOST LIKELY HUMAN RESPONSE FROM CONVAI ROUND1 CHATS
     NOTE: SUBCLASS OF DUAL_ENCODER_WRAPPER
     """
+
     def __init__(self, model_prefix, data_fname, dict_fname, name, n_resp=10000):
-        super(Human_Imitator_Wrapper, self).__init__(model_prefix, data_fname, dict_fname, name, n_resp)
+        super(Human_Imitator_Wrapper, self).__init__(
+            model_prefix, data_fname, dict_fname, name, n_resp)
 
     def get_response(self, user_id='', text='', context=None, article='', **kwargs):
         logging.info('--------------------------------')
@@ -278,7 +282,7 @@ class Human_Imitator_Wrapper(Dual_Encoder_Wrapper):
         context.append(text)
         logging.info('Using context: %s' % ' '.join(list(context)))
 
-        response_set_str  = self.cached_retrieved_data['r']
+        response_set_str = self.cached_retrieved_data['r']
         response_set_embs = self.cached_retrieved_data['r_embs']
 
         cached_retrieved_data = self.model.retrieve(
@@ -302,6 +306,7 @@ class HREDQA_Wrapper(Model_Wrapper):
     GENERATE A FOLLOWUP QUESTION. ie: WHAT? WHY? YOU?
     BAD MODEL IN GENERAL...
     """
+
     def __init__(self, model_prefix, dict_fname, name):
         super(HREDQA_Wrapper, self).__init__(model_prefix, name)
 
@@ -346,6 +351,7 @@ class CandidateQuestions_Wrapper(Model_Wrapper):
     """
     ASK A PREDEFINED QUESTION ABOUT AN ENTITY IN THE ARTICLE
     """
+
     def __init__(self, model_prefix, dict_fname, name):
         super(CandidateQuestions_Wrapper, self).__init__(model_prefix, name)
         # Use these questions if no suitable questions are found
@@ -397,6 +403,7 @@ class DumbQuestions_Wrapper(Model_Wrapper):
     """
     IF USER ASKED A SIMPLE QUESTION RETURN A PREDEFINED ANSWER
     """
+
     def __init__(self, model_prefix, dict_fname, name):
         super(DumbQuestions_Wrapper, self).__init__(model_prefix, name)
         self.data = json.load(open(dict_fname, 'r'))
@@ -433,6 +440,7 @@ class DRQA_Wrapper(Model_Wrapper):
     """
     GIVE AN ANSWER RELATED TO THE ARTICLE
     """
+
     def __init__(self, model_prefix, dict_fname, name):
         super(DRQA_Wrapper, self).__init__(model_prefix, name)
         self.articles = {}
@@ -446,7 +454,6 @@ class DRQA_Wrapper(Model_Wrapper):
 
     def preprocess(self, chat_id='', article_text='', **kwargs):
         logging.info("Saving the article for this chat state")
-        logging.info("Saving : {}".format(article_text))
         self.articles[chat_id] = article_text
 
     # return the key which matches
@@ -462,21 +469,24 @@ class DRQA_Wrapper(Model_Wrapper):
         ctext = self._format_to_model(text, len(context))
         context.append(ctext)
         response = ''
+        article_present = False
+        if user_id in self.articles:
+            article_present = True
         if not isinstance(article,basestring):
             article = str(article)
-        if len(article) == 0:
-            logging.info("DRQA taking saved article")
-            article = self.articles[user_id]
-        logging.info("DRQA : article {}".format(article))
-        try:
-            res = requests.post(DRQA_ENDURL+'/ask',
-                                json={'article': article, 'question': text})
-            res_data = res.json()
-            response = res_data['reply']['text']
-        except Exception as e:
-            print e
-            logging.error(e)
-        context.append(self._format_to_model(response, len(context)))
+        if article_present:
+            if len(article) == 0:
+                logging.info("DRQA taking saved article, only if present")
+                article = self.articles[user_id]
+            try:
+                res = requests.post(DRQA_ENDURL+'/ask',
+                                    json={'article': article, 'question': text})
+                res_data = res.json()
+                response = res_data['reply']['text']
+            except Exception as e:
+                print e
+                logging.error(e)
+            context.append(self._format_to_model(response, len(context)))
         return response, context
 
 
@@ -484,9 +494,11 @@ class NQG_Wrapper(Model_Wrapper):
     """
     GENERATES A QUESTION FOR EACH SENTENCE IN THE ARTICLE
     """
+
     def __init__(self, model_prefix, dict_fname, name):
         super(NQG_Wrapper, self).__init__(model_prefix, name)
         self.questions = {}
+        self.seen_user = []
 
     def preprocess(self, chat_id='', article_text='', **kwargs):
         # extract all sentences from the article
@@ -494,21 +506,30 @@ class NQG_Wrapper(Model_Wrapper):
         # check condition if we use Spacy
         assert isinstance(article_text, basestring)
         # clean the text
-        article_text = re.sub(r'^https?:\/\/.*[\r\n]*', '', article_text, flags=re.MULTILINE)
+        article_text = re.sub(
+            r'^https?:\/\/.*[\r\n]*', '', article_text, flags=re.MULTILINE)
         sentences = sent_tokenize(article_text)
         try:
             res = requests.post(NQG_ENDURL, json={'sents': sentences})
             res_data = res.json()
             self.questions[chat_id] = res_data
-            for item in self.questions[chat_id]:
-                item.update({"used": 0})
+            # remove duplicate questions
+            all_preds = []
+            rm_index = []
+            for indx, item in enumerate(self.questions[chat_id]):
+                item.update({'used':0})
+                if item['pred'] not in all_preds:
+                    all_preds.append(item['pred'])
+                else:
+                    rm_index.append(indx)
             logging.info('Preprocessed article')
             # pruning bad examples
-            rm_index = []
             for i,preds in enumerate(self.questions[chat_id]):
                 if 'source: source:' in preds['pred']:
                     rm_index.append(i)
+            rm_index = list(set(rm_index))
             self.questions[chat_id] = [qs for i,qs in enumerate(self.questions[chat_id]) if i not in set(rm_index)]
+
             self.questions[chat_id].sort(key=lambda x:  x["score"])
         except Exception as e:
             logging.info('Error in NQG article fetching')
@@ -517,12 +538,19 @@ class NQG_Wrapper(Model_Wrapper):
     def get_response(self, user_id='', text='', context=None, article=None, **kwargs):
         logging.info('----------------------------------------')
         logging.info('Generating NQG question for user %s.' % user_id)
+        logging.info('Context')
+        logging.info(context)
         response = ''
         if len(self.questions) > 0:
+            logging.info("Available questions : ")
+            logging.info(self.questions[user_id])
             qs = [(i,q) for i,q in enumerate(self.questions[user_id]) if q['used'] == 0]
             if len(qs) > 0:
                 response = qs[0][1]['pred']
-                self.questions[user_id][qs[0][0]]['used'] += 1
+                if user_id in self.seen_user:
+                    self.questions[user_id][qs[0][0]]['used'] += 1
+                else:
+                    self.seen_user.append(user_id)
                 self.questions[user_id].sort(key=lambda x: x["used"])
 
         context.append(self._format_to_model(response, len(context)))
@@ -536,6 +564,7 @@ class Echo_Wrapper(Model_Wrapper):
     """
     ECHO: RETURN THE INPUT
     """
+
     def __init__(self, model_prefix, dict_fname, name):
         super(Echo_Wrapper, self).__init__(model_prefix, name)
 
@@ -551,28 +580,30 @@ class Echo_Wrapper(Model_Wrapper):
         context.append(self._format_to_model(response, len(context)))
         return response, context
 
+
 class Topic_Wrapper(Model_Wrapper):
     """
     IF USER ASKS FOR THE TOPIC, RETURN TOPIC CLASSIFICATION USING FASTTEXT
     """
+
     def __init__(self, model_prefix, dict_fname, name, dir_name, model_name, top_k=2):
         super(Topic_Wrapper, self).__init__(model_prefix, name)
-        ## Read the classes once
+        # Read the classes once
         self.dir_name = dir_name
         self.model_name = model_name
         self.topics = []
         self.predicted = []
         self.top_k = top_k
         self.query_string = 'cd {} && ./fasttext predict {} /tmp/{}_article.txt {} > /tmp/{}_preds.txt'
-        with open(dir_name + 'classes.txt','r') as fp:
+        with open(dir_name + 'classes.txt', 'r') as fp:
             for line in fp:
                 self.topics.append(line.rstrip())
 
         self.topic_phrases = ["<topic>",
-                             "This article is about <topic>",
-                             "I think it's about <topic>",
-                             "It's about <topic>",
-                             "The article is related to <topic>"]
+                              "This article is about <topic>",
+                              "I think it's about <topic>",
+                              "It's about <topic>",
+                              "The article is related to <topic>"]
 
     def isMatch(self, text=''):
         # catch responses of the style "what is this article about"
@@ -585,28 +616,29 @@ class Topic_Wrapper(Model_Wrapper):
         """Calculate the article topic in preprocess call
         """
         logging.info("Started preprocesssing topics")
-        ## Write article to tmp file
-        with codecs.open('/tmp/{}_article.txt'.format(chat_id),'w',encoding='utf-8') as fp:
-            fp.write(article_text.replace("\n",""))
-        ## Use subprocess to call fasttext
+        # Write article to tmp file
+        with codecs.open('/tmp/{}_article.txt'.format(chat_id), 'w', encoding='utf-8') as fp:
+            fp.write(article_text.replace("\n", ""))
+        # Use subprocess to call fasttext
         logging.info("Running fasttext ...")
         call_string = self.query_string.format(FASTTEXT_DIR,
-            self.model_name,chat_id,
-            self.top_k, chat_id)
+                                               self.model_name, chat_id,
+                                               self.top_k, chat_id)
         logging.info(call_string)
         outp = delegator.run(call_string)
         logging.info(outp.out)
         logging.info(outp.err)
-        ## store the topics in memory
+        # store the topics in memory
         logging.info("Extracting predictions")
         self.predicted = []
         with open('/tmp/{}_preds.txt'.format(chat_id), 'r') as fp:
             for line in fp:
                 p = line.split(' ')
-                p = [int(pt.replace('__label__','')) - 1 for pt in p]
+                p = [int(pt.replace('__label__', '')) - 1 for pt in p]
                 self.predicted.append([self.topics[pt] for pt in p])
         assert len(self.predicted) == 1
-        logging.info("Calculated topics for the article, which are {}".format(','.join(self.predicted[0])))
+        logging.info("Calculated topics for the article, which are {}".format(
+            ','.join(self.predicted[0])))
 
     def get_response(self, user_id='', text='', context=None, article=None, **kwargs):
         logging.info('---------------------------------')
@@ -614,9 +646,10 @@ class Topic_Wrapper(Model_Wrapper):
         logging.info('Topics : {}'.format(self.predicted))
         logging.info('isMatch : {}'.format(self.isMatch(text)))
         if len(self.predicted) > 0 and self.isMatch(text):
-            topic = self.predicted[0][0] # give back the top topic
+            topic = self.predicted[0][0]  # give back the top topic
             topic_phrase_index = random.choice(range(len(self.topic_phrases)))
-            response = self.topic_phrases[topic_phrase_index].replace("<topic>", topic)
+            response = self.topic_phrases[topic_phrase_index].replace(
+                "<topic>", topic)
         else:
             response = ''
         context.append(self._format_to_model(response, len(context)))
@@ -627,6 +660,7 @@ class DrQA_Wiki_Wrapper(Model_Wrapper):
     """
     GIVE AN ANSWER RELATED TO WIKIPEDIA DUMP
     """
+
     def __init__(self, model_prefix, dict_fname, name):
         super(DrQA_Wiki_Wrapper, self).__init__(model_prefix, name)
 
@@ -644,25 +678,29 @@ class DrQA_Wiki_Wrapper(Model_Wrapper):
         context.append(self._format_to_model(response, len(context)))
         return response, context
 
-## Shamelessly inspired from MILABOT
+# Shamelessly inspired from MILABOT
+
+
 class FactGenerator_Wrapper(Model_Wrapper):
     """
     RETURN A FACT ACCRODING TO THE CONVERSATION HISTORY
     """
+
     def __init__(self, model_prefix, dict_fname, name):
         super(FactGenerator_Wrapper, self).__init__(model_prefix, name)
         random_facts_path = '/root/convai/data/facts.txt'
         all_facts_embedding_path = '/root/convai/data/fact_embedding.mod'
-        self.all_facts = codecs.open(random_facts_path, 'r',encoding='utf-8').readlines()
-        self.all_facts = [all_fact.strip().replace(" .",".").replace("\"", " ")
-                for all_fact in self.all_facts
-                if len(all_fact.strip().split()) > 2]
+        self.all_facts = codecs.open(
+            random_facts_path, 'r', encoding='utf-8').readlines()
+        self.all_facts = [all_fact.strip().replace(" .", ".").replace("\"", " ")
+                          for all_fact in self.all_facts
+                          if len(all_fact.strip().split()) > 2]
 
         self.fact_phrases = ["<fact>",
-                                "Did you know that <fact>?",
-                                "Do you know that <fact>?",
-                                "Here's an interesting fact. <fact>",
-                                "Here's a fact! <fact>"]
+                             "Did you know that <fact>?",
+                             "Do you know that <fact>?",
+                             "Here's an interesting fact. <fact>",
+                             "Here's a fact! <fact>"]
 
         self.wh_prefix_phrases = ["I'm not sure. However,",
                                   "I'm not sure. But.",
@@ -671,54 +709,66 @@ class FactGenerator_Wrapper(Model_Wrapper):
                                   "I don't know. But."]
 
         self.w2v_path = '/root/convai/data/GoogleNews-vectors-negative300.bin'
-        self.w2v = KeyedVectors.load_word2vec_format(self.w2v_path, binary=True)
+        self.w2v = KeyedVectors.load_word2vec_format(
+            self.w2v_path, binary=True)
         self.w2v_dim = self.w2v['hello'].shape[0]
         self.w2v_stopwords = conf.stopwords
         self.wh_words = conf.wh_words
         if os.path.exists(all_facts_embedding_path):
-            self.all_facts_embeddings = pkl.load(open(all_facts_embedding_path,'r'))
+            self.all_facts_embeddings = pkl.load(
+                open(all_facts_embedding_path, 'r'))
         else:
-            self.all_facts_embeddings = np.zeros((len(self.all_facts), self.w2v_dim), dtype='float32')
+            self.all_facts_embeddings = np.zeros(
+                (len(self.all_facts), self.w2v_dim), dtype='float32')
             for fact_index, fact in enumerate(self.all_facts):
-                fact_embedding, fact_valid_embedding = self.get_utterance_embedding(fact)
+                fact_embedding, fact_valid_embedding = self.get_utterance_embedding(
+                    fact)
                 self.all_facts_embeddings[fact_index, :] = fact_embedding
-            pkl.dump(self.all_facts_embeddings, open(all_facts_embedding_path, 'w'))
-
+            pkl.dump(self.all_facts_embeddings, open(
+                all_facts_embedding_path, 'w'))
 
     def get_utterance_embedding(self, utterance):
-        tokens = utterance.replace("'s","").replace("'t","").replace("'d","").replace("'ll","").replace("'re","").replace("'ve","").replace("'"," ").replace(",", " ").replace(".", " ").replace("!", " ").replace("?", " ").replace("\"", " ").split()
+        tokens = utterance.replace("'s", "").replace("'t", "").replace("'d", "").replace("'ll", "").replace("'re", "").replace(
+            "'ve", "").replace("'", " ").replace(",", " ").replace(".", " ").replace("!", " ").replace("?", " ").replace("\"", " ").split()
         X = np.zeros((self.w2v_dim,))
         for tok in tokens:
-            if (len(tok) > 1) and (not tok in self.w2v_stopwords):
+            if (len(tok) > 1) and (tok not in self.w2v_stopwords):
                 if tok in self.w2v:
                     X += self.w2v[tok]
 
         if np.linalg.norm(X) < 0.00000000001:
             return X, False
         else:
-            return X/np.linalg.norm(X), True
+            return X / np.linalg.norm(X), True
 
     def get_response(self, user_id='', text='', context=None, **kwargs):
         context.append(text)
         if len(context) > 0:
-            dialogue_history_embedding, is_valid_embedding = self.get_utterance_embedding(' '.join(context))
-            last_user_utterance_lower = context[-1].replace("'", " ").replace("\"", " ").replace(".", " ").replace("!", " ").replace("?", " ").replace(",", " ").lower().split()
+            dialogue_history_flattened = ' '.join(context).lower()
+            dialogue_history_embedding, is_valid_embedding = self.get_utterance_embedding(
+                dialogue_history_flattened)
+            last_user_utterance_lower = context[-1].replace("'", " ").replace("\"", " ").replace(
+                ".", " ").replace("!", " ").replace("?", " ").replace(",", " ").lower().split()
             last_user_utterance_has_wh_word = False
             for word in last_user_utterance_lower:
                 if word in self.wh_words:
                     last_user_utterance_has_wh_word = True
                     break
-            scores = np.dot(self.all_facts_embeddings, dialogue_history_embedding.T)
+            scores = np.dot(self.all_facts_embeddings,
+                            dialogue_history_embedding.T)
             facts_indices_sorted = scores.argsort()[::-1]
-            dialogue_history_flattened = ' '.join(context).lower()
             for fact_index in facts_indices_sorted:
                 fact = self.all_facts[fact_index]
-                if not fact.lower() in dialogue_history_flattened:
-                    fact_phrase_index = random.choice(range(len(self.fact_phrases)))
-                    fact_text = self.fact_phrases[fact_phrase_index].replace("<fact>",fact)
+                if fact.lower() not in dialogue_history_flattened:
+                    fact_phrase_index = random.choice(
+                        range(len(self.fact_phrases)))
+                    fact_text = self.fact_phrases[fact_phrase_index].replace(
+                        "<fact>", fact)
                     if last_user_utterance_has_wh_word:
-                        fact_text = random.choice(self.wh_prefix_phrases) + ' ' + fact_text
-                    context.append(self._format_to_model(fact_text, len(context)))
+                        fact_text = random.choice(
+                            self.wh_prefix_phrases) + ' ' + fact_text
+                    context.append(self._format_to_model(
+                        fact_text, len(context)))
                     return fact_text, context
 
 
@@ -726,9 +776,10 @@ class AliceBot_Wrapper(Model_Wrapper):
     """
     USES ALICE_BOT TO GIVE A REPLY
     """
-    def __init__(self, model_prefix, dict_fname,name):
+
+    def __init__(self, model_prefix, dict_fname, name):
         super(AliceBot_Wrapper, self).__init__(model_prefix, name)
-        self.aliceBot = NLGAlice() 
+        self.aliceBot = NLGAlice()
 
     def get_response(self, user_id='', text='', context=None, **kwargs):
         ctext = self._format_to_model(text, len(context))
@@ -745,13 +796,12 @@ class AliceBot_Wrapper(Model_Wrapper):
             response = self.aliceBot.compute_responses(clean_context, None)
             # prune response for presence of Alexa, Socialbot or MILA
             if 'Alexa' in response:
-                response.replace('Alexa','Botty')
+                response.replace('Alexa', 'Botty')
             if 'Socialbot' in response:
-                response.replace('Socialbot','Convbot')
+                response.replace('Socialbot', 'Convbot')
             if 'MILA' in response:
-                response.replace('MILA','Hogwarts')
+                response.replace('MILA', 'Hogwarts')
         except Exception as e:
             logging.error("Error generating alicebot response")
         context.append(self._format_to_model(response, len(context)))
         return response, context
-

@@ -12,11 +12,13 @@ import config
 conf = config.get_config()
 import random
 import emoji
+import numpy as np
 # import storage
 from model_selection_zmq import ModelID
 from Queue import Queue
 from threading import Thread
 import logging
+from datetime import datetime
 import traceback
 logging.basicConfig(
     level=logging.INFO,
@@ -43,6 +45,7 @@ limitations under the License.
 MAX_CONTEXT = 3
 
 chat_history = {}
+chat_timing = {} # just for testing response time
 
 # Queues
 processing_msg_queue = Queue()
@@ -183,12 +186,29 @@ def consumer():
     socket = context.socket(zmq.PULL)
     socket.bind(PARENT_PIPE)
     logging.info("Main pull channel active")
+    msg_count = 0
+    resp_times = []
+    last_time = datetime.now()
     while True:
         msg = socket.recv_json()
-        print msg
-        # only store the last MAX_CONTEXT in the array
-        bot.ai[msg['chat_id']]['context'] = msg['context'][:-MAX_CONTEXT]
-        outgoing_msg_queue.put(msg)
+        logging.info(msg)
+        # do not put test type msgs in outgoing queue
+        if 'control' in msg and msg['control'] == 'test':
+            # count the responses per min
+            msg_count += 1
+            time_now = datetime.now()
+            resp_time = (time_now - chat_timing[msg['chat_id']]).total_seconds()
+            resp_times.append(resp_time)
+            logging.info("Resp time : {}".format(resp_time))
+            if msg_count == 10:
+                logging.info("Average resp time : {}".format(
+                    np.mean(resp_times)))
+                resp_times = []
+                msg_count = 0
+        else:
+            # only store the last MAX_CONTEXT in the array
+            # bot.ai[msg['chat_id']]['context'] = msg['context'][:-MAX_CONTEXT]
+            outgoing_msg_queue.put(msg)
 
 
 def producer():
@@ -252,6 +272,8 @@ def reply_sender():
             text = msg['text']
             model_name = msg['model_name']
             policyID = msg['policyID']
+            if 'context' in msg:
+                bot.ai[chat_id]['context'] = msg['context'][-MAX_CONTEXT:]
 
             if text.strip() == '':
                 logging.info("Decided to respond with random emoji")
@@ -291,6 +313,26 @@ def stop_app():
     """
     processing_msg_queue.put({'control': 'exit'})
 
+def test_app():
+    """ Perform heavy testing on the app.
+    Send msgs and log the response avg response time.
+    """
+    chat_id = random.randint(1,100000)
+    text = random.choice(['ok, how was it', 'wow good observation',
+        'where did it happen?', 'can you explain?', 'ok', 'hmm', 'good',
+        'i dont like this', 'interesting', 'where did you see this?',
+        'who made it?','\start McGill University is a public research organization'])
+    context = ['preset context']
+    allowed_model = 'all'
+    processing_msg_queue.put({
+        'chat_id': chat_id,
+        'text': text,
+        'context': context,
+        'allowed_model': allowed_model,
+        'control' : 'test'
+    })
+    chat_timing[chat_id] = datetime.now()
+    
 
 if __name__ == '__main__':
     """ Start the threads.
@@ -299,6 +341,7 @@ if __name__ == '__main__':
     3. Consumer thread. model_selection -> bot
     4. Reply thread. bot -> Telegram
     """
+    MODE = 'production' # can be 'test' or anything else
     response_receiver_thread = Thread(target=response_receiver, args=(True,))
     response_receiver_thread.daemon = True
     response_receiver_thread.start()
@@ -313,7 +356,12 @@ if __name__ == '__main__':
     reply_thread.start()
     try:
         while True:
-            time.sleep(1)
+            if MODE == 'test':
+                test_app()
+                if random.choice([True, False]):
+                    test_app()
+                #test_app()
+            time.sleep(10)
     except (KeyboardInterrupt, SystemExit):
         logging.info("Stopping model response selector")
         stop_app()

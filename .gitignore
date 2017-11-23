@@ -31,3 +31,4 @@ ranker/models/*_term/*/*.ckpt*
 ranker/models/*/checkpoint
 ranker/data/*.json
 ranker/data/*.features/
+give_access.sh
