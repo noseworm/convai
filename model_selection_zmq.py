@@ -38,7 +38,7 @@ conf = config.get_config()
 # N.B. `import zmq` **has to be** the first import.
 
 
-nlp = spacy.load('en')
+nlp = spacy.load('en', parser=False, entity=False)
 
 # Utils
 
@@ -948,7 +948,7 @@ def get_response(chat_id, text, context, allowed_model=None, control=None):
             cres['conf'] = str(cres_conf / 2) # half the confidence
             model_responses[chat_unique_id][ModelID.CAND_QA] = cres
 
-        # Bored model selection
+        # Bored model selection (TODO: nlp() might be taking time)
         nt_sent = nlp(unicode(text))
         nt_words = [p.lemma_ for p in nt_sent]
         # check if user said only generic words:
