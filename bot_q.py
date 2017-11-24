@@ -50,7 +50,7 @@ chat_timing = {} # just for testing response time
 
 # Queues
 processing_msg_queue = Queue()
-outgoing_msg_queue = multiprocessing.JoinableQueue()
+outgoing_msg_queue = Queue() #multiprocessing.JoinableQueue()
 
 # Pipes
 # parent to bot caller
@@ -184,13 +184,14 @@ def producer():
     """
     while True:
         msg = processing_msg_queue.get()
-        m_p = multiprocessing.Process(target=producer_process, args=(msg,outgoing_msg_queue,
-            model_selection_agent,))
-        m_p.daemon = True
-        m_p.start()
+        producer_process(msg)
+        #m_p = multiprocessing.Process(target=producer_process, args=(msg,outgoing_msg_queue,
+        #    model_selection_agent,))
+        #m_p.daemon = True
+        #m_p.start()
         processing_msg_queue.task_done()
 
-def producer_process(msg, outgoing_msg_queue, model_selection_agent):
+def producer_process(msg):
     if 'text' in msg and 'chat_id' in msg and 'context' in msg:
         time_now = datetime.now()
         response = model_selection_agent.get_response(msg['chat_id'], msg['text'], msg['context'])
@@ -245,8 +246,8 @@ def reply_sender():
         package = outgoing_msg_queue.get()
         msg, cache = package[0], package[1]
         # preserving the state
-        for key,value in cache.iteritems():
-            setattr(model_selection_agent, key, value)
+        #for key,value in cache.iteritems():
+        #    setattr(model_selection_agent, key, value)
         outgoing_msg_queue.task_done()
         if 'chat_id' not in msg:
             continue
