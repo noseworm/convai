@@ -541,7 +541,7 @@ class NQG_Wrapper(Model_Wrapper):
         logging.info('Context')
         logging.info(context)
         response = ''
-        if len(self.questions) > 0:
+        if len(self.questions) > 0 and user_id in self.questions:
             logging.info("Available questions : ")
             logging.info(self.questions[user_id])
             qs = [(i,q) for i,q in enumerate(self.questions[user_id]) if q['used'] == 0]
@@ -592,7 +592,7 @@ class Topic_Wrapper(Model_Wrapper):
         self.dir_name = dir_name
         self.model_name = model_name
         self.topics = []
-        self.predicted = []
+        self.predicted = {}
         self.top_k = top_k
         self.query_string = 'cd {} && ./fasttext predict {} /tmp/{}_article.txt {} > /tmp/{}_preds.txt'
         with open(dir_name + 'classes.txt', 'r') as fp:
@@ -630,15 +630,15 @@ class Topic_Wrapper(Model_Wrapper):
         logging.info(outp.err)
         # store the topics in memory
         logging.info("Extracting predictions")
-        self.predicted = []
+        self.predicted[chat_id] = []
         with open('/tmp/{}_preds.txt'.format(chat_id), 'r') as fp:
             for line in fp:
                 p = line.split(' ')
                 p = [int(pt.replace('__label__', '')) - 1 for pt in p]
-                self.predicted.append([self.topics[pt] for pt in p])
-        assert len(self.predicted) == 1
+                self.predicted[chat_id].append([self.topics[pt] for pt in p])
+        assert len(self.predicted[chat_id]) == 1
         logging.info("Calculated topics for the article, which are {}".format(
-            ','.join(self.predicted[0])))
+            ','.join(self.predicted[chat_id][0])))
 
     def get_response(self, user_id='', text='', context=None, article=None, **kwargs):
         logging.info('---------------------------------')
@@ -646,7 +646,7 @@ class Topic_Wrapper(Model_Wrapper):
         logging.info('Topics : {}'.format(self.predicted))
         logging.info('isMatch : {}'.format(self.isMatch(text)))
         if len(self.predicted) > 0 and self.isMatch(text):
-            topic = self.predicted[0][0]  # give back the top topic
+            topic = self.predicted[user_id][0][0]  # give back the top topic
             topic_phrase_index = random.choice(range(len(self.topic_phrases)))
             response = self.topic_phrases[topic_phrase_index].replace(
                 "<topic>", topic)
