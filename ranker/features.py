@@ -6,6 +6,7 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from embedding_metrics import w2v
 from embedding_metrics import greedy_score, extrema_score, average_score
 
+import time
 import os
 import inspect
 filename = inspect.getframeinfo(inspect.currentframe()).filename
@@ -32,26 +33,39 @@ logger.info(stop)
 logger.info("")
 
 
-def get(article, context, candidate, feature_list):
+def initialize_features(feature_list):
     """
-    get all features we want for a triple of (article, context, candidate response).
-    :param article: the text of the conversation article to talk to
-    :param context: the list of user & bot utterances so far
-    :param candidate: the candidate response one model proposed
-    :feature_list: list of features to return for the above triple.
-    :return: an aray containing all feature objects you requested for.
+    construct a list of Feature instances to be used for all responses
+    :param feature_list: list of feature names (str)
+    :return: list of `Feature` instances
     """
     feature_objects = []  # list of feature objects
 
     for f in feature_list:
-        feature = eval(f)(article=article, context=context, candidate=candidate)
+        feature = eval(f)(article=None, context=None, candidate=None)
         feature_objects.append(feature)
 
     if len(feature_objects) == 0:
         print "WARNING: no feature recognized in %s" % (feature_list,)
-    
+
     return feature_objects
-    # To get raw features call "np.array([f.feat for f in feature_objects]).flatten()"
+
+
+def get(feature_objects, article, context, candidate):
+    """
+    get all features we want for a triple of (article, context, candidate response).
+    :param feature_objects: list of `Feature` instances to measure for the above triple.
+    :param article: the text of the conversation article to talk to
+    :param context: the list of user & bot utterances so far
+    :param candidate: the candidate response one model proposed
+    :return: an aray containing all feature objects you requested for.
+    """
+    raw_features = []
+    for f in feature_objects:
+        f.set(article, context, candidate)
+        raw_features.append(f.feat)
+
+    return np.array(raw_features).flatten()
 
 
 #####################
@@ -1053,9 +1067,6 @@ if __name__ == '__main__':
         "i am not a fan of russian policies",
         "haha me neither !"
     ]
-    candidate1 = "i am happy to make you laugh"
-    candidate2 = "ha ha ha"
-    candidate3 = "i am not a fan of you"
 
     features = [
         'AverageWordEmbedding_Candidate', 'AverageWordEmbedding_User', 'AverageWordEmbedding_LastK',
@@ -1071,10 +1082,25 @@ if __name__ == '__main__':
         'DialogActCandidate', 'DialogActLastUser',
         'SentimentScoreCandidate', 'SentimentScoreLastUser'
     ]
+    # candidate1 = "i am happy to make you laugh"
+    # candidate2 = "ha ha ha"
+    # candidate3 = "i am not a fan of you"
+    # for feature in features:
+    #     logger.info("class: %s" % feature)
+    #     feature_obj = get(article, context, candidate3, [feature])[0]
+    #     logger.info("feature: %s" % (feature_obj.feat,))
+    #     logger.info("dim: %d" % feature_obj.dim)
+    #     logger.info("")
 
-    for feature in features:
-        logger.info("class: %s" % feature)
-        feature_obj = get(article, context, candidate3, [feature])[0]
-        logger.info("feature: %s" % (feature_obj.feat,))
-        logger.info("dim: %d" % feature_obj.dim)
-        logger.info("")
+    print "creating features..."
+    start_creation_time = time.time()
+    feat_objects = initialize_features(features)
+    print "created all feature instances in %s sec" % (time.time() - start_creation_time)
+
+    while True:
+        candidate = raw_input("candidate response: ")
+        start_computing_time = time.time()
+        raw_feat = get(feat_objects, article, context, candidate)
+        print "computed all features in %s seconds" % (time.time() - start_computing_time)
+        print "features dim: %s" % (raw_feat.shape,)
+

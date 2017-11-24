@@ -158,6 +158,11 @@ assert feature_list_short == feature_list_long
 # - optimizer_short         & optimizer_long
 # - learning_rate_short     & learning_rate_long
 
+logging.info("creating ranker feature instances...")
+start_creation_time = time.time()
+feature_objects = features.initialize_features(feature_list_short)
+logging.info("created all feature instances in %s sec" % (time.time() - start_creation_time))
+
 
 class ModelClient(multiprocessing.Process):
     """
@@ -266,24 +271,24 @@ class ModelClient(multiprocessing.Process):
                 optimizer_long, learning_rate_long,
                 model_path_long, model_id_long, model_name_long
             )
-        logging.info("Init session")
+        logging.info("Init tf session")
         # Wrap ANY call to the rankers within those two sessions:
         self.sess_short = tf.Session(graph=self.model_graph_short)
         self.sess_long = tf.Session(graph=self.model_graph_long)
-        logging.info("Done init session")
+        logging.info("Done init tf session")
         # example: reload trained parameters
-        logging.info("Loading trained params short")
+        logging.info("Loading trained params short-term estimator")
         with self.sess_short.as_default():
             with self.model_graph_short.as_default():
                 self.estimator_short.load(
                     self.sess_short, model_path_short, model_id_short, model_name_short)
-        logging.info("Loading trained params long")
+        logging.info("Loading trained params long-term estimator")
         with self.sess_long.as_default():
             with self.model_graph_long.as_default():
                 self.estimator_long.load(
                     self.sess_long, model_path_long, model_id_long, model_name_long)
 
-        logging.info("Done building NN")
+        logging.info("Done building NN ranker")
 
         self.warmup()
 
@@ -320,21 +325,20 @@ class ModelClient(multiprocessing.Process):
                     # calculate NN estimation
                     logging.info(
                         "Start feature calculation for model {}".format(self.model_name))
-                    feat = features.get(
-                        msg['article_text'], msg['all_context'] +
-                        [context[-1]],
-                        response, feature_list_short)
-                    # recall: `feature_list_short` & `feature_list_long` are the same
+                    raw_features = features.get(
+                        feature_objects,
+                        msg['article_text'],
+                        msg['all_context'] + [context[-1]],
+                        response
+                    )
                     logging.info(
                         "Done feature calculation for model {}".format(self.model_name))
                     # Run approximator and save the score in packet
                     logging.info(
                         "Scoring the candidate response for model {}".format(self.model_name))
-                    # Get the input vector to the estimators from the feature instances lise:
-                    candidate_vector = np.concatenate(
-                        [feat[idx].feat for idx in range(len(feature_list_short))])
-                    input_dim = len(candidate_vector)
-                    candidate_vector = candidate_vector.reshape(
+                    # reshape raw_features to fit the ranker format
+                    input_dim = len(raw_features)
+                    candidate_vector = raw_features.reshape(
                         1, input_dim)  # make an array of shape (1, input)
                     # Get predictions for this candidate response:
                     with self.sess_short.as_default():
