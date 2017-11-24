@@ -34,8 +34,8 @@ logging.basicConfig(
     format='%(asctime)s %(name)s.%(funcName)s +%(lineno)s: %(levelname)-8s [%(process)d] %(message)s',
 )
 
-NQG_ENDURL = 'http://localhost:8080'  # TODO: update this for final submission?
-DRQA_ENDURL = 'http://0.0.0.0:8888'   # TODO: update this for final submission?
+NQG_ENDURL = 'http://localhost:8080'
+DRQA_ENDURL = 'http://0.0.0.0:8888'
 FASTTEXT_DIR = '/root/convai/models/fastText/'
 
 

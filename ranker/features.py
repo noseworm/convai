@@ -15,6 +15,7 @@ path = os.path.dirname(os.path.abspath(filename))
 import spacy
 import logging
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s: %(name)s: %(levelname)s: %(message)s")
 
 """
 This file defines different hand-enginered features based
@@ -1058,7 +1059,6 @@ class SentimentScoreLastUser(Feature):
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.DEBUG, format="%(asctime)s: %(name)s: %(levelname)s: %(message)s")
 
     article = "russia asks facebook to comply with personal data policy friday, september 29, 2017 \
         on tuesday, russian government internet watchdog roskomnadzor 'insisted' us - based social \
