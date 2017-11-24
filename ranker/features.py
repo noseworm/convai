@@ -37,35 +37,44 @@ def initialize_features(feature_list):
     """
     construct a list of Feature instances to be used for all responses
     :param feature_list: list of feature names (str)
-    :return: list of `Feature` instances
+    :return: list of `Feature` instances, and the total dimension
     """
     feature_objects = []  # list of feature objects
+    dim = 0
 
     for f in feature_list:
         feature = eval(f)(article=None, context=None, candidate=None)
+        dim += feature.dim
         feature_objects.append(feature)
 
     if len(feature_objects) == 0:
         print "WARNING: no feature recognized in %s" % (feature_list,)
 
-    return feature_objects
+    return feature_objects, dim
 
 
-def get(feature_objects, article, context, candidate):
+def get(feature_objects, dim, article, context, candidate):
     """
     get all features we want for a triple of (article, context, candidate response).
     :param feature_objects: list of `Feature` instances to measure for the above triple.
+    :param dim: total dimension of all features
     :param article: the text of the conversation article to talk to
     :param context: the list of user & bot utterances so far
     :param candidate: the candidate response one model proposed
     :return: an aray containing all feature objects you requested for.
     """
-    raw_features = []
+    raw_features = np.zeros((dim,))
+    idx = 0
     for f in feature_objects:
-        f.set(article, context, candidate)
-        raw_features.append(f.feat)
+        f.set(article, context, candidate)  # compute feature
+        if f.feat is None or len(f.feat) != f.dim:
+            logger.warning("unable to compute feature %s" % f.__class__.__name__)
+            logger.warning("dim: %d --- feat: %s" % (f.dim, f.feat))
+        else:
+            raw_features[idx: idx+f.dim] = f.feat  # set raw features
+        idx += f.dim
 
-    return np.array(raw_features).flatten()
+    return raw_features
 
 
 #####################
@@ -1092,15 +1101,17 @@ if __name__ == '__main__':
     #     logger.info("dim: %d" % feature_obj.dim)
     #     logger.info("")
 
-    print "creating features..."
+    logger.info("creating features...")
     start_creation_time = time.time()
-    feat_objects = initialize_features(features)
-    print "created all feature instances in %s sec" % (time.time() - start_creation_time)
+    feat_objects, dim = initialize_features(features)
+    logger.info("created all feature instances in %s sec" % (time.time() - start_creation_time))
+    logger.info("total dim: %d" % dim)
 
     while True:
         candidate = raw_input("candidate response: ")
         start_computing_time = time.time()
-        raw_feat = get(feat_objects, article, context, candidate)
-        print "computed all features in %s seconds" % (time.time() - start_computing_time)
-        print "features dim: %s" % (raw_feat.shape,)
+        raw_feat = get(feat_objects, dim, article, context, candidate)
+        logger.info("computed all features in %s seconds" % (time.time() - start_computing_time))
+        logger.info("features dim: %s" % (raw_feat.shape,))
+        assert dim == len(raw_features)
 

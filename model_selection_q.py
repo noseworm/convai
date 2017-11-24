@@ -160,7 +160,7 @@ assert feature_list_short == feature_list_long
 
 logging.info("creating ranker feature instances...")
 start_creation_time = time.time()
-feature_objects = features.initialize_features(feature_list_short)
+feature_objects, feature_dim = features.initialize_features(feature_list_short)
 logging.info("created all feature instances in %s sec" % (time.time() - start_creation_time))
 
 
@@ -327,6 +327,7 @@ class ModelClient(multiprocessing.Process):
                         "Start feature calculation for model {}".format(self.model_name))
                     raw_features = features.get(
                         feature_objects,
+                        feature_dim,
                         msg['article_text'],
                         msg['all_context'] + [context[-1]],
                         response
@@ -337,9 +338,9 @@ class ModelClient(multiprocessing.Process):
                     logging.info(
                         "Scoring the candidate response for model {}".format(self.model_name))
                     # reshape raw_features to fit the ranker format
-                    input_dim = len(raw_features)
+                    assert len(raw_features) == feature_dim
                     candidate_vector = raw_features.reshape(
-                        1, input_dim)  # make an array of shape (1, input)
+                        1, feature_dim)  # make an array of shape (1, input)
                     # Get predictions for this candidate response:
                     with self.sess_short.as_default():
                         with self.model_graph_short.as_default():
