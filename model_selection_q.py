@@ -429,7 +429,7 @@ class ResponseModelsQuerier(object):
 
             if isinstance(responses, Exception):
                 model_name = model['model_name']
-                print("\n{0} failed to compute response with error ({1}). See ./logs/models/<date>{0}.err for details.\n{0} has been removed from running models.".format(model_name, responses))
+                logging.error("\n{0} failed to compute response with error ({1}). \n{0} has been removed from running models.".format(model_name, responses))
                 self.models.remove(model)
 
                 if len(self.models) == 0:
@@ -512,16 +512,19 @@ class ModelSelectionAgent(object):
             self.used_models[chat_id] = []
 
             # preprocessing
+            logging.info("Preprocessing call")
             _ = self.response_models.get_response({
                 'control':'preprocess',
                 'article_text':self.article_text[chat_id],
                 'chat_id':chat_id,
                 'chat_unique_id': chat_unique_id
             })
+            logging.info("preprocessed")
 
             # cand and nqg
             query_models = [ModelID.NQG, ModelID.CAND_QA]
 
+            logging.info("fire call")
             candidate_responses = self.response_models.get_response({
                 'query_models': query_models,
                 'article_text':self.article_text[chat_id],
@@ -531,6 +534,7 @@ class ModelSelectionAgent(object):
                 'context':context,
                 'all_context':self.chat_history[chat_id]
             })
+            logging.info("received response")
 
         else:
             # fire global query
@@ -544,7 +548,6 @@ class ModelSelectionAgent(object):
             if chat_id not in self.used_models:
                 self.used_models[chat_id] = []
 
-            
             article_text = ''
             all_context = []
             if chat_id in self.article_text:
@@ -572,6 +575,8 @@ class ModelSelectionAgent(object):
                 response = candidate_responses[selection]
                 response['policyID'] = Policy.START
         else: 
+            logging.info("Removing duplicates")
+            candidate_responses = self.no_duplicate(chat_id, candidate_responses)
             # if text contains emoji's, strip them
             #text, emojis = strip_emojis(text)
             # check if the text contains wh words
@@ -760,6 +765,15 @@ class ModelSelectionAgent(object):
         elif len(dont_consider_models) > 0:
             dont_consider = dont_consider_models
         return consider, dont_consider
+
+    def no_duplicate(self, chat_id, candidate_responses, k=5):
+        del_models = []
+        for model, response in candidate_responses.iteritems():
+            if chat_id in self.chat_history and response['text'] in set(self.chat_history[chat_id][-k:]):
+                del_models.append(model)
+        for dm in del_models:
+            del candidate_responses[dm]
+        return candidate_responses
 
 
 if __name__ == '__main__':
