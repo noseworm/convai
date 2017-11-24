@@ -39,7 +39,7 @@ conf = config.get_config()
 # N.B. `import zmq` **has to be** the first import.
 
 
-nlp = spacy.load('en', parser=False, entity=False)
+nlp = spacy.load('en')
 
 # Utils
 
@@ -483,6 +483,9 @@ class ModelSelectionAgent(object):
         chat_unique_id = str(chat_id) + '_' + str(uuid.uuid4())
         is_start = False
 
+        logging.info(chat_id)
+        logging.info(self.article_nouns)
+
         # if text contains /start, don't add it to the context
         if '/start' in text:
             is_start = True
@@ -598,17 +601,18 @@ class ModelSelectionAgent(object):
                                  and "?" in set(nt_words)):
                 # get list of common nouns between article and question
                 if chat_id in self.article_nouns:
+                    logging.info(self.article_nouns[chat_id])
                     common = list(set(self.article_nouns[chat_id]).intersection(
                         set(nt_words)))
                 else:
+                    logging.info("no article nouns saved")
                     common = []
                 logging.info(
                     'Common nouns between question and article: {}'.format(common))
                 # if there is a common noun between question and article
                 # select DrQA
                 if len(common) > 0 and ModelID.DRQA in candidate_responses:
-                    response = model_responses[
-                        chat_unique_id][ModelID.DRQA]
+                    response = candidate_responses[ModelID.DRQA]
                     response['policyID'] = Policy.FIXED
 
         if not response:
